@@ -235,10 +235,8 @@ mod tests {
 
     #[test]
     fn test_dot_product() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ], 3).unwrap();
+        let vectors =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]], 3).unwrap();
 
         let query = vec![1.0, 0.0, 0.0];
         let dots = vectors.dot_product(&query).unwrap();
@@ -249,11 +247,9 @@ mod tests {
 
     #[test]
     fn test_cosine_similarity() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 0.0],
-            vec![1.0, 1.0],
-            vec![0.0, 1.0],
-        ], 2).unwrap();
+        let vectors =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 0.0], vec![1.0, 1.0], vec![0.0, 1.0]], 2)
+                .unwrap();
 
         let query = vec![1.0, 0.0];
         let similarities = vectors.cosine_similarity(&query).unwrap();
@@ -265,10 +261,7 @@ mod tests {
 
     #[test]
     fn test_euclidean_distance() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![0.0, 0.0],
-            vec![3.0, 4.0],
-        ], 2).unwrap();
+        let vectors = DenseVectorArrayF32::from_vecs(&[vec![0.0, 0.0], vec![3.0, 4.0]], 2).unwrap();
 
         let query = vec![0.0, 0.0];
         let distances = vectors.euclidean_distance(&query).unwrap();
@@ -279,10 +272,7 @@ mod tests {
 
     #[test]
     fn test_manhattan_distance() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0],
-            vec![4.0, 6.0],
-        ], 2).unwrap();
+        let vectors = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![4.0, 6.0]], 2).unwrap();
 
         let query = vec![0.0, 0.0];
         let distances = vectors.manhattan_distance(&query).unwrap();
@@ -302,9 +292,7 @@ mod tests {
 
     #[test]
     fn test_zero_norm_error() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![0.0, 0.0],
-        ], 2).unwrap();
+        let vectors = DenseVectorArrayF32::from_vecs(&[vec![0.0, 0.0]], 2).unwrap();
 
         let query = vec![1.0, 0.0];
         let result = vectors.cosine_similarity(&query);

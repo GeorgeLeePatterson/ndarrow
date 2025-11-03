@@ -39,14 +39,14 @@
 //! let similarities = vectors.cosine_similarity(&query_vector)?;
 //! ```
 
-pub mod error;
-pub mod dense;
-pub mod scalar;
-pub mod ops;
 pub mod conversions;
+pub mod dense;
+pub mod error;
+pub mod ops;
+pub mod scalar;
 
-pub use error::{NarrowError, Result};
 pub use dense::DenseVectorArray;
+pub use error::{NarrowError, Result};
 pub use scalar::VectorScalar;
 
 #[cfg(test)]

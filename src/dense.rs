@@ -252,10 +252,7 @@ mod tests {
 
     #[test]
     fn test_get_vector() {
-        let vectors = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ];
+        let vectors = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
 
         let array = DenseVectorArrayF32::from_vecs(&vectors, 3).unwrap();
 
@@ -268,7 +265,7 @@ mod tests {
     fn test_dimension_mismatch() {
         let vectors = vec![
             vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0],  // Wrong dimension!
+            vec![4.0, 5.0], // Wrong dimension!
         ];
 
         let result = DenseVectorArrayF32::from_vecs(&vectors, 3);

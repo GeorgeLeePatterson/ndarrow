@@ -7,17 +7,17 @@
 //! - Similarity computations
 //! - Round-trip conversions
 
-use narrow::{DenseVectorArray, DenseVectorArrayF32, Result};
 use approx::assert_relative_eq;
+use narrow::{DenseVectorArray, DenseVectorArrayF32, Result};
 
 #[test]
 fn test_create_and_query() -> Result<()> {
     // Create a vector database of embeddings
     let embeddings = vec![
-        vec![1.0, 0.0, 0.0],  // Pure X
-        vec![0.0, 1.0, 0.0],  // Pure Y
-        vec![0.0, 0.0, 1.0],  // Pure Z
-        vec![0.707, 0.707, 0.0],  // X+Y diagonal
+        vec![1.0, 0.0, 0.0],     // Pure X
+        vec![0.0, 1.0, 0.0],     // Pure Y
+        vec![0.0, 0.0, 1.0],     // Pure Z
+        vec![0.707, 0.707, 0.0], // X+Y diagonal
     ];
 
     let vectors = DenseVectorArrayF32::from_vecs(&embeddings, 3)?;
@@ -36,15 +36,9 @@ fn test_create_and_query() -> Result<()> {
 
 #[test]
 fn test_vector_arithmetic() -> Result<()> {
-    let a = DenseVectorArrayF32::from_vecs(&[
-        vec![1.0, 2.0],
-        vec![3.0, 4.0],
-    ], 2)?;
+    let a = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0]], 2)?;
 
-    let b = DenseVectorArrayF32::from_vecs(&[
-        vec![10.0, 20.0],
-        vec![30.0, 40.0],
-    ], 2)?;
+    let b = DenseVectorArrayF32::from_vecs(&[vec![10.0, 20.0], vec![30.0, 40.0]], 2)?;
 
     // Test addition
     let sum = a.add(&b)?;
@@ -68,19 +62,16 @@ fn test_vector_arithmetic() -> Result<()> {
 
 #[test]
 fn test_similarity_metrics() -> Result<()> {
-    let vectors = DenseVectorArrayF32::from_vecs(&[
-        vec![1.0, 0.0],
-        vec![0.0, 1.0],
-        vec![1.0, 1.0],
-    ], 2)?;
+    let vectors =
+        DenseVectorArrayF32::from_vecs(&[vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 1.0]], 2)?;
 
     let query = vec![1.0, 0.0];
 
     // Cosine similarity
     let cosine = vectors.cosine_similarity(&query)?;
-    assert_relative_eq!(cosine[0], 1.0, epsilon = 1e-6);  // Identical
-    assert_relative_eq!(cosine[1], 0.0, epsilon = 1e-6);  // Orthogonal
-    assert_relative_eq!(cosine[2], 0.707106781, epsilon = 1e-6);  // 45 degrees
+    assert_relative_eq!(cosine[0], 1.0, epsilon = 1e-6); // Identical
+    assert_relative_eq!(cosine[1], 0.0, epsilon = 1e-6); // Orthogonal
+    assert_relative_eq!(cosine[2], 0.707106781, epsilon = 1e-6); // 45 degrees
 
     // Dot product
     let dots = vectors.dot_product(&query)?;
@@ -90,8 +81,8 @@ fn test_similarity_metrics() -> Result<()> {
 
     // Euclidean distance
     let euclidean = vectors.euclidean_distance(&query)?;
-    assert_relative_eq!(euclidean[0], 0.0);  // Identical
-    assert_relative_eq!(euclidean[1], 1.41421356, epsilon = 1e-6);  // sqrt(2)
+    assert_relative_eq!(euclidean[0], 0.0); // Identical
+    assert_relative_eq!(euclidean[1], 1.41421356, epsilon = 1e-6); // sqrt(2)
 
     // Manhattan distance
     let manhattan = vectors.manhattan_distance(&query)?;
@@ -107,10 +98,7 @@ fn test_ndarray_integration() -> Result<()> {
     use ndarray::array;
 
     // Create from ndarray
-    let matrix = array![
-        [1.0, 2.0, 3.0],
-        [4.0, 5.0, 6.0],
-    ];
+    let matrix = array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0],];
 
     let vectors = DenseVectorArrayF32::from_ndarray(&matrix.view())?;
     assert_eq!(vectors.len(), 2);
@@ -139,10 +127,7 @@ fn test_nalgebra_integration() -> Result<()> {
     use nalgebra::{DMatrix, DVector};
 
     // Create from nalgebra matrix
-    let matrix = DMatrix::from_row_slice(2, 3, &[
-        1.0, 2.0, 3.0,
-        4.0, 5.0, 6.0,
-    ]);
+    let matrix = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
     let vectors = DenseVectorArrayF32::from_nalgebra_matrix(&matrix)?;
     assert_eq!(vectors.len(), 2);
@@ -178,11 +163,11 @@ fn test_vector_search_workflow() -> Result<()> {
 
     // 1. Create a database of embeddings (e.g., from a model)
     let database = vec![
-        vec![0.1, 0.9, 0.5],  // Document 1
-        vec![0.8, 0.2, 0.3],  // Document 2
-        vec![0.3, 0.7, 0.6],  // Document 3
-        vec![0.9, 0.1, 0.2],  // Document 4
-        vec![0.2, 0.8, 0.4],  // Document 5
+        vec![0.1, 0.9, 0.5], // Document 1
+        vec![0.8, 0.2, 0.3], // Document 2
+        vec![0.3, 0.7, 0.6], // Document 3
+        vec![0.9, 0.1, 0.2], // Document 4
+        vec![0.2, 0.8, 0.4], // Document 5
     ];
 
     let vectors = DenseVectorArrayF32::from_vecs(&database, 3)?;
@@ -217,11 +202,8 @@ fn test_vector_search_workflow() -> Result<()> {
 fn test_batch_operations() -> Result<()> {
     // Simulate batch processing of vectors
 
-    let vectors = DenseVectorArrayF32::from_vecs(&[
-        vec![1.0, 2.0],
-        vec![3.0, 4.0],
-        vec![5.0, 6.0],
-    ], 2)?;
+    let vectors =
+        DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]], 2)?;
 
     // Normalize all vectors (using scalar multiplication and norms)
     let norms = vectors.euclidean_distance(&vec![0.0, 0.0])?;
@@ -251,14 +233,10 @@ fn test_type_safety() -> Result<()> {
     use narrow::DenseVectorArrayF64;
 
     // Float32 arrays
-    let f32_array = DenseVectorArrayF32::from_vecs(&[
-        vec![1.0, 2.0],
-    ], 2)?;
+    let f32_array = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0]], 2)?;
 
     // Float64 arrays
-    let f64_array = DenseVectorArrayF64::from_vecs(&[
-        vec![1.0, 2.0],
-    ], 2)?;
+    let f64_array = DenseVectorArrayF64::from_vecs(&[vec![1.0, 2.0]], 2)?;
 
     // Both work with their respective types
     assert_eq!(f32_array.dimension(), 2);

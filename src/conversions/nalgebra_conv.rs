@@ -42,7 +42,11 @@ where
         let data_slice = &buffer_slice[offset..offset + total_elements];
 
         // nalgebra matrices are column-major by default, but we can create from row-major data
-        Ok(DMatrix::from_row_slice(self.len(), self.dimension, data_slice))
+        Ok(DMatrix::from_row_slice(
+            self.len(),
+            self.dimension,
+            data_slice,
+        ))
     }
 
     /// Create a nalgebra DVector from a single vector in this array.
@@ -113,7 +117,10 @@ where
         let start = offset + (index * self.dimension);
         let end = start + self.dimension;
 
-        Ok(DVectorView::from_slice(&buffer_slice[start..end], self.dimension))
+        Ok(DVectorView::from_slice(
+            &buffer_slice[start..end],
+            self.dimension,
+        ))
     }
 
     /// Create a DenseVectorArray from a nalgebra matrix.
@@ -192,10 +199,8 @@ mod tests {
 
     #[test]
     fn test_to_nalgebra_matrix() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ], 3).unwrap();
+        let vectors =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]], 3).unwrap();
 
         let matrix = vectors.to_nalgebra_matrix().unwrap();
 
@@ -207,10 +212,8 @@ mod tests {
 
     #[test]
     fn test_to_nalgebra_vector() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ], 3).unwrap();
+        let vectors =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]], 3).unwrap();
 
         let vec0 = vectors.to_nalgebra_vector(0).unwrap();
         assert_eq!(vec0.len(), 3);
@@ -222,9 +225,7 @@ mod tests {
 
     #[test]
     fn test_nalgebra_view() {
-        let vectors = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-        ], 3).unwrap();
+        let vectors = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0]], 3).unwrap();
 
         let view = vectors.nalgebra_view(0).unwrap();
         assert_eq!(view.len(), 3);
@@ -234,10 +235,7 @@ mod tests {
 
     #[test]
     fn test_from_nalgebra_matrix() {
-        let matrix = DMatrix::from_row_slice(2, 3, &[
-            1.0, 2.0, 3.0,
-            4.0, 5.0, 6.0,
-        ]);
+        let matrix = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
         let vectors = DenseVectorArrayF32::from_nalgebra_matrix(&matrix).unwrap();
 
@@ -258,11 +256,9 @@ mod tests {
 
     #[test]
     fn test_matrix_roundtrip() {
-        let original = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0],
-            vec![3.0, 4.0],
-            vec![5.0, 6.0],
-        ], 2).unwrap();
+        let original =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]], 2)
+                .unwrap();
 
         let matrix = original.to_nalgebra_matrix().unwrap();
         let roundtrip = DenseVectorArrayF32::from_nalgebra_matrix(&matrix).unwrap();
@@ -279,11 +275,15 @@ mod tests {
     fn test_sliced_array_to_nalgebra_matrix() {
         use arrow::array::Array;
 
-        let original = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-        ], 3).unwrap();
+        let original = DenseVectorArrayF32::from_vecs(
+            &[
+                vec![1.0, 2.0, 3.0],
+                vec![4.0, 5.0, 6.0],
+                vec![7.0, 8.0, 9.0],
+            ],
+            3,
+        )
+        .unwrap();
 
         // Slice to get the last two elements
         let sliced = original.as_arrow().slice(1, 2);
@@ -301,11 +301,9 @@ mod tests {
     fn test_sliced_array_to_nalgebra_vector() {
         use arrow::array::Array;
 
-        let original = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0],
-            vec![3.0, 4.0],
-            vec![5.0, 6.0],
-        ], 2).unwrap();
+        let original =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]], 2)
+                .unwrap();
 
         // Slice to get the middle element
         let sliced = original.as_arrow().slice(1, 1);
@@ -322,11 +320,15 @@ mod tests {
     fn test_sliced_array_nalgebra_view() {
         use arrow::array::Array;
 
-        let original = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-        ], 3).unwrap();
+        let original = DenseVectorArrayF32::from_vecs(
+            &[
+                vec![1.0, 2.0, 3.0],
+                vec![4.0, 5.0, 6.0],
+                vec![7.0, 8.0, 9.0],
+            ],
+            3,
+        )
+        .unwrap();
 
         // Slice to get the first element
         let sliced = original.as_arrow().slice(0, 1);

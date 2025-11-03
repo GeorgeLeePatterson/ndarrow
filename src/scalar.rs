@@ -12,7 +12,9 @@ use std::fmt::Debug;
 ///
 /// This trait is sealed and can only be implemented for supported Arrow primitive types
 /// (Float32, Float64, and potentially Float16 in the future).
-pub trait VectorScalar: private::Sealed + ArrowPrimitiveType + Debug + Send + Sync + 'static {
+pub trait VectorScalar:
+    private::Sealed + ArrowPrimitiveType + Debug + Send + Sync + 'static
+{
     /// The native Rust type for this scalar.
     type Native: num_traits::Float + Debug + Send + Sync + 'static;
 

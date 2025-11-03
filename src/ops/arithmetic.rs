@@ -6,9 +6,9 @@
 use crate::dense::DenseVectorArray;
 use crate::error::{NarrowError, Result};
 use crate::scalar::VectorScalar;
+use arrow::array::FixedSizeListArray;
 use arrow::array::PrimitiveArray;
 use arrow::datatypes::Field;
-use arrow::array::FixedSizeListArray;
 use std::sync::Arc;
 
 impl<T: VectorScalar> DenseVectorArray<T> {
@@ -43,12 +43,8 @@ impl<T: VectorScalar> DenseVectorArray<T> {
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
         let field = Arc::new(Field::new("item", T::DATA_TYPE, false));
-        let result_array = FixedSizeListArray::new(
-            field,
-            self.dimension as i32,
-            Arc::new(values_array),
-            None,
-        );
+        let result_array =
+            FixedSizeListArray::new(field, self.dimension as i32, Arc::new(values_array), None);
 
         Self::try_new(result_array)
     }
@@ -75,12 +71,8 @@ impl<T: VectorScalar> DenseVectorArray<T> {
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
         let field = Arc::new(Field::new("item", T::DATA_TYPE, false));
-        let result_array = FixedSizeListArray::new(
-            field,
-            self.dimension as i32,
-            Arc::new(values_array),
-            None,
-        );
+        let result_array =
+            FixedSizeListArray::new(field, self.dimension as i32, Arc::new(values_array), None);
 
         Self::try_new(result_array)
     }
@@ -107,12 +99,8 @@ impl<T: VectorScalar> DenseVectorArray<T> {
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
         let field = Arc::new(Field::new("item", T::DATA_TYPE, false));
-        let result_array = FixedSizeListArray::new(
-            field,
-            self.dimension as i32,
-            Arc::new(values_array),
-            None,
-        );
+        let result_array =
+            FixedSizeListArray::new(field, self.dimension as i32, Arc::new(values_array), None);
 
         Self::try_new(result_array)
     }
@@ -139,12 +127,8 @@ impl<T: VectorScalar> DenseVectorArray<T> {
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
         let field = Arc::new(Field::new("item", T::DATA_TYPE, false));
-        let result_array = FixedSizeListArray::new(
-            field,
-            self.dimension as i32,
-            Arc::new(values_array),
-            None,
-        );
+        let result_array =
+            FixedSizeListArray::new(field, self.dimension as i32, Arc::new(values_array), None);
 
         Self::try_new(result_array)
     }
@@ -158,15 +142,12 @@ mod tests {
 
     #[test]
     fn test_add() {
-        let a = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ], 3).unwrap();
+        let a =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]], 3).unwrap();
 
-        let b = DenseVectorArrayF32::from_vecs(&[
-            vec![10.0, 20.0, 30.0],
-            vec![40.0, 50.0, 60.0],
-        ], 3).unwrap();
+        let b =
+            DenseVectorArrayF32::from_vecs(&[vec![10.0, 20.0, 30.0], vec![40.0, 50.0, 60.0]], 3)
+                .unwrap();
 
         let result = a.add(&b).unwrap();
 
@@ -176,13 +157,9 @@ mod tests {
 
     #[test]
     fn test_subtract() {
-        let a = DenseVectorArrayF32::from_vecs(&[
-            vec![10.0, 20.0, 30.0],
-        ], 3).unwrap();
+        let a = DenseVectorArrayF32::from_vecs(&[vec![10.0, 20.0, 30.0]], 3).unwrap();
 
-        let b = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-        ], 3).unwrap();
+        let b = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0]], 3).unwrap();
 
         let result = a.subtract(&b).unwrap();
 
@@ -191,10 +168,8 @@ mod tests {
 
     #[test]
     fn test_scalar_multiply() {
-        let a = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ], 3).unwrap();
+        let a =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]], 3).unwrap();
 
         let result = a.scalar_multiply(2.0).unwrap();
 
@@ -204,13 +179,9 @@ mod tests {
 
     #[test]
     fn test_multiply() {
-        let a = DenseVectorArrayF32::from_vecs(&[
-            vec![2.0, 3.0, 4.0],
-        ], 3).unwrap();
+        let a = DenseVectorArrayF32::from_vecs(&[vec![2.0, 3.0, 4.0]], 3).unwrap();
 
-        let b = DenseVectorArrayF32::from_vecs(&[
-            vec![5.0, 6.0, 7.0],
-        ], 3).unwrap();
+        let b = DenseVectorArrayF32::from_vecs(&[vec![5.0, 6.0, 7.0]], 3).unwrap();
 
         let result = a.multiply(&b).unwrap();
 
@@ -229,10 +200,7 @@ mod tests {
     #[test]
     fn test_length_mismatch() {
         let a = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0]], 2).unwrap();
-        let b = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0],
-            vec![3.0, 4.0],
-        ], 2).unwrap();
+        let b = DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0]], 2).unwrap();
 
         let result = a.add(&b);
         assert!(matches!(result, Err(NarrowError::LengthMismatch { .. })));
@@ -243,17 +211,15 @@ mod tests {
         use arrow::array::Array;
 
         // Create arrays and slice them
-        let a = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0],
-            vec![3.0, 4.0],
-            vec![5.0, 6.0],
-        ], 2).unwrap();
+        let a =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]], 2)
+                .unwrap();
 
-        let b = DenseVectorArrayF32::from_vecs(&[
-            vec![10.0, 20.0],
-            vec![30.0, 40.0],
-            vec![50.0, 60.0],
-        ], 2).unwrap();
+        let b = DenseVectorArrayF32::from_vecs(
+            &[vec![10.0, 20.0], vec![30.0, 40.0], vec![50.0, 60.0]],
+            2,
+        )
+        .unwrap();
 
         // Slice both arrays to take only the middle element
         let a_sliced = a.as_arrow().slice(1, 1);
@@ -274,11 +240,9 @@ mod tests {
     fn test_scalar_multiply_sliced() {
         use arrow::array::Array;
 
-        let a = DenseVectorArrayF32::from_vecs(&[
-            vec![1.0, 2.0],
-            vec![3.0, 4.0],
-            vec![5.0, 6.0],
-        ], 2).unwrap();
+        let a =
+            DenseVectorArrayF32::from_vecs(&[vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]], 2)
+                .unwrap();
 
         // Slice to get the last element
         let a_sliced = a.as_arrow().slice(2, 1);
