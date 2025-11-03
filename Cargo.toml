@@ -12,3 +12,10 @@ homepage = "https://github.com/georgeleepatterson/narrow"
 documentation = "https://docs.rs/narrow"
 
 [dependencies]
+arrow = "53"
+ndarray = "0.16"
+nalgebra = "0.33"
+thiserror = "2.0"
+
+[dev-dependencies]
+approx = "0.5"
