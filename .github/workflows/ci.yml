@@ -31,7 +31,6 @@ jobs:
     - uses: dorny/paths-filter@master
       id: changes
       with:
-        predicate-quantifier: 'every'
         filters: |
           code:
             - '**'
