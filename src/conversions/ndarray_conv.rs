@@ -39,10 +39,18 @@ impl<T: VectorScalar> DenseVectorArray<T> {
     /// ```
     pub fn as_ndarray(&self) -> Result<ArrayView2<T::Native>> {
         let values = self.values();
-        let slice = values.values();
+
+        // Handle Arrow array offsets for sliced arrays
+        // The values array may have an offset if the FixedSizeListArray was sliced
+        let offset = values.offset();
+        let total_elements = self.len() * self.dimension;
+        let buffer_slice = values.values();
+
+        // Slice the buffer to account for offset
+        let data_slice = &buffer_slice[offset..offset + total_elements];
 
         // Create a 2D view with shape (num_vectors, dimension)
-        ArrayView2::from_shape((self.len(), self.dimension), slice)
+        ArrayView2::from_shape((self.len(), self.dimension), data_slice)
             .map_err(|e| NarrowError::ComputationError(format!("failed to create ndarray view: {}", e)))
     }
 
@@ -76,11 +84,14 @@ impl<T: VectorScalar> DenseVectorArray<T> {
         }
 
         let values = self.values();
-        let slice = values.values();
-        let start = index * self.dimension;
+
+        // Handle Arrow array offsets for sliced arrays
+        let offset = values.offset();
+        let buffer_slice = values.values();
+        let start = offset + (index * self.dimension);
         let end = start + self.dimension;
 
-        ArrayView1::from_shape(self.dimension, &slice[start..end])
+        ArrayView1::from_shape(self.dimension, &buffer_slice[start..end])
             .map_err(|e| NarrowError::ComputationError(format!("failed to create ndarray view: {}", e)))
     }
 
@@ -194,5 +205,48 @@ mod tests {
         for i in 0..original.len() {
             assert_eq!(original.get(i).unwrap(), roundtrip.get(i).unwrap());
         }
+    }
+
+    #[test]
+    fn test_sliced_array_as_ndarray() {
+        use arrow::array::Array;
+
+        let original = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+        ], 3).unwrap();
+
+        // Slice to get the middle element
+        let sliced = original.as_arrow().slice(1, 1);
+        let sliced_narrow = DenseVectorArrayF32::new(sliced).unwrap();
+
+        let matrix = sliced_narrow.as_ndarray().unwrap();
+
+        assert_eq!(matrix.shape(), &[1, 3]);
+        assert_relative_eq!(matrix[[0, 0]], 4.0);
+        assert_relative_eq!(matrix[[0, 1]], 5.0);
+        assert_relative_eq!(matrix[[0, 2]], 6.0);
+    }
+
+    #[test]
+    fn test_sliced_array_ndarray_view() {
+        use arrow::array::Array;
+
+        let original = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0],
+            vec![3.0, 4.0],
+            vec![5.0, 6.0],
+        ], 2).unwrap();
+
+        // Slice to get the last element
+        let sliced = original.as_arrow().slice(2, 1);
+        let sliced_narrow = DenseVectorArrayF32::new(sliced).unwrap();
+
+        let vec = sliced_narrow.ndarray_view(0).unwrap();
+
+        assert_eq!(vec.len(), 2);
+        assert_relative_eq!(vec[0], 5.0);
+        assert_relative_eq!(vec[1], 6.0);
     }
 }

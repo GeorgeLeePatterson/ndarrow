@@ -34,10 +34,15 @@ where
     /// ```
     pub fn to_nalgebra_matrix(&self) -> Result<DMatrix<T::Native>> {
         let values = self.values();
-        let slice = values.values();
+
+        // Handle Arrow array offsets for sliced arrays
+        let offset = values.offset();
+        let total_elements = self.len() * self.dimension;
+        let buffer_slice = values.values();
+        let data_slice = &buffer_slice[offset..offset + total_elements];
 
         // nalgebra matrices are column-major by default, but we can create from row-major data
-        Ok(DMatrix::from_row_slice(self.len(), self.dimension, slice))
+        Ok(DMatrix::from_row_slice(self.len(), self.dimension, data_slice))
     }
 
     /// Create a nalgebra DVector from a single vector in this array.
@@ -70,11 +75,14 @@ where
         }
 
         let values = self.values();
-        let slice = values.values();
-        let start = index * self.dimension;
+
+        // Handle Arrow array offsets for sliced arrays
+        let offset = values.offset();
+        let buffer_slice = values.values();
+        let start = offset + (index * self.dimension);
         let end = start + self.dimension;
 
-        Ok(DVector::from_row_slice(&slice[start..end]))
+        Ok(DVector::from_row_slice(&buffer_slice[start..end]))
     }
 
     /// Get a view of a single vector as a nalgebra DVectorView.
@@ -98,11 +106,14 @@ where
         }
 
         let values = self.values();
-        let slice = values.values();
-        let start = index * self.dimension;
+
+        // Handle Arrow array offsets for sliced arrays
+        let offset = values.offset();
+        let buffer_slice = values.values();
+        let start = offset + (index * self.dimension);
         let end = start + self.dimension;
 
-        Ok(DVectorView::from_slice(&slice[start..end], self.dimension))
+        Ok(DVectorView::from_slice(&buffer_slice[start..end], self.dimension))
     }
 
     /// Create a DenseVectorArray from a nalgebra matrix.
@@ -262,5 +273,70 @@ mod tests {
         for i in 0..original.len() {
             assert_eq!(original.get(i).unwrap(), roundtrip.get(i).unwrap());
         }
+    }
+
+    #[test]
+    fn test_sliced_array_to_nalgebra_matrix() {
+        use arrow::array::Array;
+
+        let original = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+        ], 3).unwrap();
+
+        // Slice to get the last two elements
+        let sliced = original.as_arrow().slice(1, 2);
+        let sliced_narrow = DenseVectorArrayF32::new(sliced).unwrap();
+
+        let matrix = sliced_narrow.to_nalgebra_matrix().unwrap();
+
+        assert_eq!(matrix.nrows(), 2);
+        assert_eq!(matrix.ncols(), 3);
+        assert_relative_eq!(matrix[(0, 0)], 4.0);
+        assert_relative_eq!(matrix[(1, 2)], 9.0);
+    }
+
+    #[test]
+    fn test_sliced_array_to_nalgebra_vector() {
+        use arrow::array::Array;
+
+        let original = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0],
+            vec![3.0, 4.0],
+            vec![5.0, 6.0],
+        ], 2).unwrap();
+
+        // Slice to get the middle element
+        let sliced = original.as_arrow().slice(1, 1);
+        let sliced_narrow = DenseVectorArrayF32::new(sliced).unwrap();
+
+        let vec = sliced_narrow.to_nalgebra_vector(0).unwrap();
+
+        assert_eq!(vec.len(), 2);
+        assert_relative_eq!(vec[0], 3.0);
+        assert_relative_eq!(vec[1], 4.0);
+    }
+
+    #[test]
+    fn test_sliced_array_nalgebra_view() {
+        use arrow::array::Array;
+
+        let original = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+        ], 3).unwrap();
+
+        // Slice to get the first element
+        let sliced = original.as_arrow().slice(0, 1);
+        let sliced_narrow = DenseVectorArrayF32::new(sliced).unwrap();
+
+        let view = sliced_narrow.nalgebra_view(0).unwrap();
+
+        assert_eq!(view.len(), 3);
+        assert_relative_eq!(view[0], 1.0);
+        assert_relative_eq!(view[1], 2.0);
+        assert_relative_eq!(view[2], 3.0);
     }
 }

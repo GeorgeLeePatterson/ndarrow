@@ -35,12 +35,10 @@ impl<T: VectorScalar> DenseVectorArray<T> {
         let self_values = self.values();
         let other_values = other.values();
 
-        // Element-wise addition
-        let result_values: Vec<T::Native> = self_values
-            .values()
-            .iter()
-            .zip(other_values.values().iter())
-            .map(|(a, b)| *a + *b)
+        // Element-wise addition, properly handling Arrow array offsets
+        let total_elements = self.len() * self.dimension;
+        let result_values: Vec<T::Native> = (0..total_elements)
+            .map(|i| self_values.value(i) + other_values.value(i))
             .collect();
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
@@ -69,12 +67,10 @@ impl<T: VectorScalar> DenseVectorArray<T> {
         let self_values = self.values();
         let other_values = other.values();
 
-        // Element-wise subtraction
-        let result_values: Vec<T::Native> = self_values
-            .values()
-            .iter()
-            .zip(other_values.values().iter())
-            .map(|(a, b)| *a - *b)
+        // Element-wise subtraction, properly handling Arrow array offsets
+        let total_elements = self.len() * self.dimension;
+        let result_values: Vec<T::Native> = (0..total_elements)
+            .map(|i| self_values.value(i) - other_values.value(i))
             .collect();
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
@@ -103,10 +99,10 @@ impl<T: VectorScalar> DenseVectorArray<T> {
     pub fn scalar_multiply(&self, scalar: T::Native) -> Result<Self> {
         let self_values = self.values();
 
-        let result_values: Vec<T::Native> = self_values
-            .values()
-            .iter()
-            .map(|v| *v * scalar)
+        // Scalar multiplication, properly handling Arrow array offsets
+        let total_elements = self.len() * self.dimension;
+        let result_values: Vec<T::Native> = (0..total_elements)
+            .map(|i| self_values.value(i) * scalar)
             .collect();
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
@@ -135,12 +131,10 @@ impl<T: VectorScalar> DenseVectorArray<T> {
         let self_values = self.values();
         let other_values = other.values();
 
-        // Element-wise multiplication
-        let result_values: Vec<T::Native> = self_values
-            .values()
-            .iter()
-            .zip(other_values.values().iter())
-            .map(|(a, b)| *a * *b)
+        // Element-wise multiplication, properly handling Arrow array offsets
+        let total_elements = self.len() * self.dimension;
+        let result_values: Vec<T::Native> = (0..total_elements)
+            .map(|i| self_values.value(i) * other_values.value(i))
             .collect();
 
         let values_array = PrimitiveArray::<T>::from_iter_values(result_values);
@@ -242,5 +236,57 @@ mod tests {
 
         let result = a.add(&b);
         assert!(matches!(result, Err(NarrowError::LengthMismatch { .. })));
+    }
+
+    #[test]
+    fn test_add_sliced_arrays() {
+        use arrow::array::Array;
+
+        // Create arrays and slice them
+        let a = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0],
+            vec![3.0, 4.0],
+            vec![5.0, 6.0],
+        ], 2).unwrap();
+
+        let b = DenseVectorArrayF32::from_vecs(&[
+            vec![10.0, 20.0],
+            vec![30.0, 40.0],
+            vec![50.0, 60.0],
+        ], 2).unwrap();
+
+        // Slice both arrays to take only the middle element
+        let a_sliced = a.as_arrow().slice(1, 1);
+        let b_sliced = b.as_arrow().slice(1, 1);
+
+        let a_narrow = DenseVectorArrayF32::new(a_sliced).unwrap();
+        let b_narrow = DenseVectorArrayF32::new(b_sliced).unwrap();
+
+        // Perform addition on sliced arrays
+        let result = a_narrow.add(&b_narrow).unwrap();
+
+        // Should get [33.0, 44.0] (from [3.0, 4.0] + [30.0, 40.0])
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get(0).unwrap(), vec![33.0, 44.0]);
+    }
+
+    #[test]
+    fn test_scalar_multiply_sliced() {
+        use arrow::array::Array;
+
+        let a = DenseVectorArrayF32::from_vecs(&[
+            vec![1.0, 2.0],
+            vec![3.0, 4.0],
+            vec![5.0, 6.0],
+        ], 2).unwrap();
+
+        // Slice to get the last element
+        let a_sliced = a.as_arrow().slice(2, 1);
+        let a_narrow = DenseVectorArrayF32::new(a_sliced).unwrap();
+
+        let result = a_narrow.scalar_multiply(2.0).unwrap();
+
+        // Should get [10.0, 12.0] (from [5.0, 6.0] * 2.0)
+        assert_eq!(result.get(0).unwrap(), vec![10.0, 12.0]);
     }
 }
