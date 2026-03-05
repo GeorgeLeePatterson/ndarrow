@@ -16,7 +16,7 @@ documentation = "https://docs.rs/ndarrow"
 # Arrow
 arrow = "55"
 arrow-array = "55"
-arrow-buffer = "55"
+arrow-buffer = "58"
 arrow-schema = { version = "55", features = ["canonical_extension_types"] }
 
 # Ndarray
