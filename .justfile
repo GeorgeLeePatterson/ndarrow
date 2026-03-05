@@ -135,76 +135,96 @@ bench-baseline-update:
 prepare-release version:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Validate version format
     if ! [[ "{{ version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo "Error: Version must be in format X.Y.Z (e.g., 0.2.0)"
         exit 1
     fi
 
+    # Require clean tree for deterministic release prep.
     if ! git diff --quiet || ! git diff --cached --quiet; then
         echo "Error: Working tree is not clean. Commit or stash changes first."
         exit 1
     fi
 
+    # Require git-cliff and fail fast when unavailable.
     if ! command -v git-cliff >/dev/null 2>&1; then
         echo "Error: git-cliff is required for release preparation."
         echo "Install it with: cargo install git-cliff"
         exit 1
     fi
 
-    VERSION="{{ version }}"
-    BRANCH="release-v${VERSION}"
+    # Create release branch
+    git checkout -b "release-v{{ version }}"
 
-    git checkout -b "${BRANCH}"
+    # Update version in root Cargo.toml (in [workspace.package] section)
+    awk '/^\[workspace\.package\]/ {in_workspace_package=1} in_workspace_package && /^version = / {gsub(/"[^"]*"/, "\"{{ version }}\""); in_workspace_package=0} {print}' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
 
-    # Update [workspace.package] version in Cargo.toml.
-    awk -v version="${VERSION}" '
-      /^\[workspace\.package\]/ { in_workspace_package = 1 }
-      in_workspace_package && /^version = / {
-        sub(/"[^"]+"/, "\"" version "\"")
-        in_workspace_package = 0
-      }
-      { print }
-    ' Cargo.toml > Cargo.toml.tmp
-    mv Cargo.toml.tmp Cargo.toml
+    # Update ndarrow crate version references in README files (if they exist).
+    # Look for patterns like: ndarrow = "0.1.0" or ndarrow = { version = "0.1.0" }.
+    for readme in README.md; do
+        if [ -f "$readme" ]; then
+            # Update simple dependency format
+            sed -i '' "s/ndarrow = \"[0-9]*\.[0-9]*\.[0-9]*\"/ndarrow = \"{{ version }}\"/" "$readme" || true
+            # Update version field in dependency table format
+            sed -i '' "s/ndarrow = { version = \"[0-9]*\.[0-9]*\.[0-9]*\"/ndarrow = { version = \"{{ version }}\"/" "$readme" || true
+        fi
+    done
 
-    # Keep README dependency snippet in sync.
-    perl -0pi.bak -e "s/ndarrow = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/ndarrow = \"${VERSION}\"/g" README.md
-    rm -f README.md.bak
-
+    # Update Cargo.lock
     cargo update --workspace
+
+    # Verify leaf crate package locally.
     cargo package --allow-dirty -p ndarrow
 
-    git-cliff -o CHANGELOG.md
-    git-cliff --unreleased --tag "v${VERSION}" --strip header -o RELEASE_NOTES.md
+    # Generate full changelog
+    echo "Generating changelog..."
+    git cliff -o CHANGELOG.md
 
+    # Generate release notes for this version
+    echo "Generating release notes..."
+    git cliff --unreleased --tag v{{ version }} --strip header -o RELEASE_NOTES.md
+
+    # Run all checks before preparing commit
     just -f {{ justfile() }} checks
 
-    git add Cargo.toml Cargo.lock README.md RELEASE_NOTES.md
-    if [ -f CHANGELOG.md ]; then
-        git add CHANGELOG.md
+    # Stage all changes.
+    # Cargo.lock may be ignored in some setups, so stage it only if tracked.
+    git add Cargo.toml CHANGELOG.md RELEASE_NOTES.md
+    if git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1; then
+        git add Cargo.lock
     fi
-    git commit -m "chore: prepare release v${VERSION}"
-    git push --set-upstream origin "${BRANCH}"
+    # Also add README if it was modified
+    git add README.md 2>/dev/null || true
+
+    # Commit
+    git commit -m "chore: prepare release v{{ version }}"
+
+    # Push branch and set upstream so later `git push` works without extra flags.
+    git push --set-upstream origin "release-v{{ version }}"
 
     echo ""
-    echo "Release preparation complete."
+    echo "Release preparation complete!"
+    echo ""
+    echo "Release notes preview:"
+    echo "----------------------"
+    head -20 RELEASE_NOTES.md
+    echo ""
     echo "Next steps:"
-    echo "1. Open and merge PR from ${BRANCH}"
-    echo "2. Run: just tag-release ${VERSION}"
+    echo "1. Create a PR from the 'release-v{{ version }}' branch"
+    echo "2. Review and merge the PR"
+    echo "3. After merge, run: just tag-release {{ version }}"
+    echo ""
 
 tag-release version:
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! [[ "{{ version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "Error: Version must be in format X.Y.Z (e.g., 0.2.0)"
-        exit 1
-    fi
 
-    VERSION="{{ version }}"
-
+    # Ensure we're on main and up to date
     git checkout main
     git pull origin main
 
+    # Verify the version in Cargo.toml matches requested version
     CARGO_VERSION=$(awk '
       /^\[workspace\.package\]/ { in_workspace_package = 1; next }
       in_workspace_package && /^version = / {
@@ -214,36 +234,41 @@ tag-release version:
       }
     ' Cargo.toml)
 
-    if [[ "${CARGO_VERSION}" != "${VERSION}" ]]; then
-        echo "Error: Cargo.toml workspace version (${CARGO_VERSION}) != requested version (${VERSION})"
+    if [ "${CARGO_VERSION}" != "{{ version }}" ]; then
+        echo "Error: Cargo.toml version (${CARGO_VERSION}) does not match requested version ({{ version }})"
+        echo "Did the release PR merge successfully?"
         exit 1
     fi
 
+    # Verify publish path works.
     cargo publish --dry-run -p ndarrow --no-verify
-    git tag -a "v${VERSION}" -m "Release v${VERSION}"
-    git push origin "v${VERSION}"
+
+    # Create and push tag
+    git tag -a "v{{ version }}" -m "Release v{{ version }}"
+    git push origin "v{{ version }}"
 
     echo ""
-    echo "Tag v${VERSION} pushed."
-    echo "GitHub release workflow should start automatically."
+    echo "Tag v{{ version }} created and pushed!"
+    echo "The release workflow will now run automatically."
+    echo ""
 
 release-dry version:
     @echo "This would:"
-    @echo "1. Validate semver {{ version }}"
-    @echo "2. Require a clean tree"
-    @echo "3. Create and push branch release-v{{ version }}"
-    @echo "4. Update Cargo.toml [workspace.package] version to {{ version }}"
-    @echo "5. Update README dependency snippet"
-    @echo "6. Update Cargo.lock and run cargo package -p ndarrow"
-    @echo "7. Generate CHANGELOG.md and RELEASE_NOTES.md"
-    @echo "8. Run just checks"
-    @echo "9. Commit release prep"
+    @echo "1. Create branch: release-v{{ version }}"
+    @echo "2. Update version to {{ version }} in:"
+    @echo "   - Cargo.toml [workspace.package] version"
+    @echo "   - README dependency snippets (if they contain ndarrow version references)"
+    @echo "3. Run local package check for ndarrow (publish dry-run path)"
+    @echo "4. Update Cargo.lock"
+    @echo "5. Generate CHANGELOG.md"
+    @echo "6. Generate RELEASE_NOTES.md"
+    @echo "7. Run just checks"
+    @echo "8. Create commit and push branch"
     @echo ""
-    @echo "After merge, tag-release would:"
-    @echo "1. Verify main is up to date"
-    @echo "2. Verify workspace version matches {{ version }}"
-    @echo "3. Run cargo publish --dry-run -p ndarrow --no-verify"
-    @echo "4. Create and push tag v{{ version }}"
+    @echo "After PR merge, 'just tag-release {{ version }}' would:"
+    @echo "1. Tag the merged commit as v{{ version }}"
+    @echo "2. Verify publish dry-run path (ndarrow)"
+    @echo "3. Push the tag (triggering release workflow)"
 
 # --- DEVELOPMENT SETUP ---
 

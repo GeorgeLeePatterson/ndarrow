@@ -3,6 +3,7 @@ name = "ndarrow"
 description = "Zero-copy bridge between Apache Arrow and ndarray"
 keywords = ["arrow", "ndarray", "linear-algebra", "zero-copy", "interop"]
 categories = ["mathematics", "science", "data-structures"]
+readme = "../../README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
