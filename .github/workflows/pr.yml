@@ -15,7 +15,7 @@ jobs:
     name: label
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/labeler@v5
         with:
           configuration-path: .github/labeler.yml
