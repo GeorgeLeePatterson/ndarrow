@@ -1,13 +1,34 @@
-# AGENTS.md — narrow
+# AGENTS.md — ndarrow
+
+## ⚠️ Build Commands — USE THESE, NOT BARE CARGO
+
+```bash
+# One command to rule them all:
+just checks
+
+# Or individually (if just is unavailable):
+cargo +nightly fmt -- --check
+cargo +stable clippy --workspace --all-targets --no-default-features -- -D warnings -W clippy::pedantic
+cargo +stable clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
+cargo check --workspace --no-default-features
+cargo check --workspace --all-features
+cargo test --workspace --lib -- --nocapture --show-output
+cargo test -p ndarrow --tests -- --nocapture --show-output
+```
+
+**NEVER** run bare `cargo check`, `cargo build`, or `cargo test` without the flags above.
+Always use `just checks` or the raw commands listed here. No exceptions.
+
+---
 
 ## Mission
 
-Build narrow into a zero-copy, zero-overhead bridge between Apache Arrow and ndarray. narrow is the
+Build ndarrow into a zero-copy, zero-overhead bridge between Apache Arrow and ndarray. ndarrow is the
 interoperability layer that allows Arrow-native systems (DataFusion, flight, IPC) to leverage
 ndarray-native numerical libraries (nabled, and any future ndarray consumer) without sacrificing
 performance.
 
-narrow is **vendor-agnostic**. It knows nothing about Qdrant, DataFusion, or any specific producer
+ndarrow is **vendor-agnostic**. It knows nothing about Qdrant, DataFusion, or any specific producer
 or consumer. It bridges two memory models — Arrow's columnar buffers and ndarray's strided arrays —
 with zero allocations on the bridge path.
 
@@ -31,7 +52,7 @@ After reading, verify context sufficiency (see docs/README.md for checklist).
 
 ### 1. Zero-Copy Bridge
 
-narrow never allocates memory on the bridge path. Converting Arrow to ndarray produces views
+ndarrow never allocates memory on the bridge path. Converting Arrow to ndarray produces views
 (pointer + shape + strides). Converting ndarray to Arrow transfers ownership of the underlying
 buffer. The bridge is O(1) in both directions.
 
@@ -62,27 +83,27 @@ All abstractions must be:
 
 ### 4. Vendor Agnosticism
 
-narrow has zero knowledge of any specific Arrow producer or consumer. It does not assume:
+ndarrow has zero knowledge of any specific Arrow producer or consumer. It does not assume:
 - A particular scalar type (f32 vs f64) — both are first-class
 - A particular vector store (Qdrant, Milvus, Pinecone, etc.)
 - A particular query engine (DataFusion, Polars, etc.)
 - A particular embedding dimension or sparsity pattern
 
-narrow bridges Arrow and ndarray. Nothing more, nothing less.
+ndarrow bridges Arrow and ndarray. Nothing more, nothing less.
 
 ### 5. ndarray Independence
 
-narrow uses ndarray as its numerical array substrate. It does not depend on nabled or any other
+ndarrow uses ndarray as its numerical array substrate. It does not depend on nabled or any other
 ndarray consumer. If nabled needs specific view types or index generics, those changes happen in
-nabled, and narrow provides what ndarray provides. No nabled-specific types leak into narrow's
+nabled, and ndarrow provides what ndarray provides. No nabled-specific types leak into ndarrow's
 public API.
 
 ### 6. Proper Arrow Extension Types
 
 Custom Arrow semantics use the `ExtensionType` trait from `arrow_schema::extension`. Canonical
 Arrow extension types (e.g., `arrow.fixed_shape_tensor`, `arrow.variable_shape_tensor`) are used
-where they exist. narrow defines its own extension types only where no canonical type exists
-(e.g., `narrow.csr_matrix` for sparse). Extension types enable cross-language interop with
+where they exist. ndarrow defines its own extension types only where no canonical type exists
+(e.g., `ndarrow.csr_matrix` for sparse). Extension types enable cross-language interop with
 pyarrow, arrow-java, etc.
 
 ### 7. Explicit Null Handling
@@ -96,7 +117,7 @@ No implicit null handling. No silent NaN substitution. No hidden filtering.
 
 ### 8. Type Safety via Traits
 
-The element type bridge is defined by traits (`NarrowElement` or equivalent) that connect Arrow's
+The element type bridge is defined by traits (`NdarrowElement` or equivalent) that connect Arrow's
 `ArrowPrimitiveType` with ndarray's element requirements. Generic code is bounded by these traits.
 Concrete implementations exist for f32, f64, and any additional types supported.
 
@@ -122,8 +143,8 @@ Individual gates:
 
 ```bash
 just fmt                           # cargo +nightly fmt -- --check
-just clippy                        # cargo clippy --workspace -- -D warnings
-just check-features                # cargo check (no-default, all, default)
+just clippy                        # cargo +stable clippy (no-default + all-features, with pedantic)
+just check-features                # cargo check (no-default, all)
 just test                          # cargo test --workspace (unit + integration)
 just coverage-check                # cargo llvm-cov (threshold: 90%)
 ```
@@ -132,11 +153,12 @@ just coverage-check                # cargo llvm-cov (threshold: 90%)
 
 ```bash
 cargo +nightly fmt -- --check
-cargo clippy --workspace -- -D warnings
+cargo +stable clippy --workspace --all-targets --no-default-features -- -D warnings -W clippy::pedantic
+cargo +stable clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
 cargo check --workspace --no-default-features
 cargo check --workspace --all-features
 cargo test --workspace --lib -- --nocapture --show-output
-cargo test -p narrow --tests -- --nocapture --show-output
+cargo test -p ndarrow --tests -- --nocapture --show-output
 ```
 
 ### Coverage (if cargo-llvm-cov is available)
@@ -153,7 +175,8 @@ Test line coverage must be >= 90%. No exceptions. If a code path exists, it has 
 
 ### Clippy Configuration
 
-All warnings are errors (`-D warnings`). No `#[allow]` without a comment explaining why.
+All warnings are errors (`-D warnings`) and pedantic lints are enabled (`-W clippy::pedantic`).
+No `#[allow]` without a comment explaining why.
 
 ## Documentation Discipline
 
@@ -174,25 +197,25 @@ Every public function has a doc comment that states:
 
 ## Naming Conventions
 
-- Crate: `narrow`
+- Crate: `ndarrow`
 - Modules: `snake_case`
-- Traits: `PascalCase` (e.g., `NarrowElement`, `AsNdarray`, `IntoArrow`)
+- Traits: `PascalCase` (e.g., `NdarrowElement`, `AsNdarray`, `IntoArrow`)
 - Functions: `snake_case`
 - View-producing functions: `as_` prefix (e.g., `as_array_view`)
 - Ownership-transferring functions: `into_` prefix (e.g., `into_arrow`)
-- Fallible functions: return `Result<T, NarrowError>`
+- Fallible functions: return `Result<T, NdarrowError>`
 - Unchecked variants: `_unchecked` suffix
 
 ## Workspace Structure
 
-narrow is a Cargo workspace. The module tree is organized by conversion direction
+ndarrow is a Cargo workspace. The module tree is organized by conversion direction
 (inbound/outbound) and data category (dense/sparse/tensor).
 
 ```
-narrow/                         # Workspace root
+ndarrow/                         # Workspace root
   Cargo.toml                    # Workspace manifest (deps, profiles, lints)
   crates/
-    narrow/                     # Main library crate
+    ndarrow/                     # Main library crate
       Cargo.toml
       src/
         lib.rs
@@ -201,7 +224,7 @@ narrow/                         # Workspace root
 
 ## Dependencies
 
-narrow depends on:
+ndarrow depends on:
 - `arrow` / `arrow-array` / `arrow-buffer` / `arrow-schema` (Apache Arrow for Rust)
 - `ndarray` (N-dimensional arrays)
 

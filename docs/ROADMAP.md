@@ -8,7 +8,7 @@
 | 2     | Dense Inbound               | PrimitiveArray -> ArrayView1, FixedSizeList -> ArrayView2 |
 | 3     | Dense Outbound              | Array1 -> PrimitiveArray, Array2 -> FixedSizeList    |
 | 4     | Null Handling               | Three-tier null API (unchecked, validated, masked)   |
-| 5     | Sparse                      | narrow.csr_matrix ext type, CsrView, two-column API |
+| 5     | Sparse                      | ndarrow.csr_matrix ext type, CsrView, two-column API |
 | 6     | Tensor                      | FixedShapeTensor support, ArrayViewD                 |
 | 7     | Variable Tensor             | VariableShapeTensor support, per-row views           |
 | 8     | Helpers                     | Cast, densify, reshape, layout normalization         |
@@ -28,11 +28,11 @@ implemented).
 1. **Update Cargo.toml**: Add dependencies (`arrow`, `ndarray`), configure features, set
    edition and metadata.
 
-2. **Create error.rs**: Define `NarrowError` enum with all variants (NullsPresent, TypeMismatch,
+2. **Create error.rs**: Define `NdarrowError` enum with all variants (NullsPresent, TypeMismatch,
    ShapeMismatch, InvalidMetadata, InnerTypeMismatch, NonStandardLayout, SparseOffsetMismatch,
    Arrow). Implement `From<ArrowError>`, `Display`, `Error`.
 
-3. **Create element.rs**: Define `NarrowElement` trait with `ArrowType` associated type.
+3. **Create element.rs**: Define `NdarrowElement` trait with `ArrowType` associated type.
    Implement for `f32` and `f64`. This is the compile-time bridge between Arrow's type system
    and ndarray's element requirements.
 
@@ -51,9 +51,9 @@ implemented).
 ### Deliverables
 
 - Compiling crate with full module tree
-- `NarrowElement` trait with f32, f64 impls
+- `NdarrowElement` trait with f32, f64 impls
 - `AsNdarray`, `IntoArrow` trait definitions
-- `NarrowError` enum
+- `NdarrowError` enum
 - Tests for trait coherence
 
 ---
@@ -65,11 +65,11 @@ implemented).
 ### Tasks
 
 1. **PrimitiveArray -> ArrayView1**: Implement `AsNdarray` for `PrimitiveArray<T>` where
-   `T::Native: NarrowElement`. The implementation borrows `self.values().as_ref()` and wraps
+   `T::Native: NdarrowElement`. The implementation borrows `self.values().as_ref()` and wraps
    it in `ArrayView1::from(slice)`. Null handling follows the three-tier API.
 
 2. **FixedSizeList -> ArrayView2**: Implement `AsNdarray` for `FixedSizeListArray`. Validate
-   that the inner array is a `PrimitiveArray<T>` where `T::Native: NarrowElement`. Extract
+   that the inner array is a `PrimitiveArray<T>` where `T::Native: NdarrowElement`. Extract
    the inner values slice, compute shape `(num_rows, value_length)`, and construct
    `ArrayView2::from_shape(shape, slice)`. Null handling for both outer (row-level) and inner
    (component-level) validity.
@@ -98,13 +98,13 @@ implemented).
 // PrimitiveArray<T> -> ArrayView1<T::Native>
 impl<T: ArrowPrimitiveType> AsNdarray for PrimitiveArray<T>
 where
-    T::Native: NarrowElement,
+    T::Native: NdarrowElement,
 {
     type View<'a> = ArrayView1<'a, T::Native>;
 
-    fn as_ndarray(&self) -> Result<Self::View<'_>, NarrowError> {
+    fn as_ndarray(&self) -> Result<Self::View<'_>, NdarrowError> {
         if self.null_count() > 0 {
-            return Err(NarrowError::NullsPresent { null_count: self.null_count() });
+            return Err(NdarrowError::NullsPresent { null_count: self.null_count() });
         }
         // values() returns &[T::Native], which is the contiguous buffer.
         Ok(ArrayView1::from(self.values().as_ref()))
@@ -115,22 +115,22 @@ where
 // This requires knowing T at the call site or using type dispatch.
 fn fixed_size_list_as_array2<T: ArrowPrimitiveType>(
     array: &FixedSizeListArray,
-) -> Result<ArrayView2<'_, T::Native>, NarrowError>
+) -> Result<ArrayView2<'_, T::Native>, NdarrowError>
 where
-    T::Native: NarrowElement,
+    T::Native: NdarrowElement,
 {
     if array.null_count() > 0 {
-        return Err(NarrowError::NullsPresent { null_count: array.null_count() });
+        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
     }
     let values = array.values().as_primitive::<T>();
     if values.null_count() > 0 {
-        return Err(NarrowError::NullsPresent { null_count: values.null_count() });
+        return Err(NdarrowError::NullsPresent { null_count: values.null_count() });
     }
     let n = array.value_length() as usize;
     let m = array.len();
     let slice: &[T::Native] = values.values().as_ref();
     ArrayView2::from_shape((m, n), slice)
-        .map_err(|e| NarrowError::ShapeMismatch {
+        .map_err(|e| NdarrowError::ShapeMismatch {
             expected: vec![m, n],
             found: vec![slice.len()],
         })
@@ -145,7 +145,7 @@ where
 
 ### Tasks
 
-1. **Array1 -> PrimitiveArray**: Implement `IntoArrow` for `Array1<T>` where `T: NarrowElement`.
+1. **Array1 -> PrimitiveArray**: Implement `IntoArrow` for `Array1<T>` where `T: NdarrowElement`.
    The implementation calls `self.into_raw_vec()` to extract the owned `Vec<T>`, constructs
    `ScalarBuffer::from(vec)`, and creates `PrimitiveArray::new(buffer, None)`.
 
@@ -175,26 +175,26 @@ where
 ### Key Implementation Detail
 
 ```rust
-impl<T: NarrowElement> IntoArrow for Array1<T>
+impl<T: NdarrowElement> IntoArrow for Array1<T>
 where
     ScalarBuffer<T>: From<Vec<T>>,
 {
     type ArrowArray = PrimitiveArray<T::ArrowType>;
 
-    fn into_arrow(self) -> Result<Self::ArrowArray, NarrowError> {
+    fn into_arrow(self) -> Result<Self::ArrowArray, NdarrowError> {
         let vec = self.into_raw_vec();
         let buffer = ScalarBuffer::from(vec);
         Ok(PrimitiveArray::new(buffer, None))
     }
 }
 
-impl<T: NarrowElement> IntoArrow for Array2<T>
+impl<T: NdarrowElement> IntoArrow for Array2<T>
 where
     ScalarBuffer<T>: From<Vec<T>>,
 {
     type ArrowArray = FixedSizeListArray;
 
-    fn into_arrow(self) -> Result<Self::ArrowArray, NarrowError> {
+    fn into_arrow(self) -> Result<Self::ArrowArray, NdarrowError> {
         let (m, n) = self.dim();
         let array = if self.is_standard_layout() {
             self
@@ -245,13 +245,13 @@ where
 
 ## Phase 5: Sparse
 
-**Goal**: Zero-copy sparse representation via the narrow.csr_matrix extension type and two-column
+**Goal**: Zero-copy sparse representation via the ndarrow.csr_matrix extension type and two-column
 convenience API.
 
 ### Tasks
 
-1. **Define narrow.csr_matrix extension type**: Implement `ExtensionType` trait in `ext/csr_matrix.rs`.
-   - `NAME = "narrow.csr_matrix"`
+1. **Define ndarrow.csr_matrix extension type**: Implement `ExtensionType` trait in `ext/csr_matrix.rs`.
+   - `NAME = "ndarrow.csr_matrix"`
    - `Metadata` struct: `CsrMatrixMetadata { ncols: usize }`
    - Storage type: `StructArray{indices: List<UInt32>, values: List<T>}`
    - `serialize_metadata`: JSON `{"ncols": N}`
@@ -268,10 +268,10 @@ convenience API.
        pub values: &'a [T],          // Arrow T values
    }
    ```
-   This type is narrow's sparse view. It uses Arrow's native index types (i32 offsets, u32 indices)
+   This type is ndarrow's sparse view. It uses Arrow's native index types (i32 offsets, u32 indices)
    to avoid conversion. Consumers (like nabled) that need `usize` indices convert on their side.
 
-3. **Inbound from extension type**: Given a `StructArray` tagged with `narrow.csr_matrix`,
+3. **Inbound from extension type**: Given a `StructArray` tagged with `ndarrow.csr_matrix`,
    extract the two List fields, borrow their offsets and values buffers, construct `CsrView`.
 
 4. **Inbound from two columns**: Convenience API that takes separate `ListArray<UInt32>` (indices)
@@ -279,7 +279,7 @@ convenience API.
    `CsrView`.
 
 5. **Outbound**: Given owned CSR data (`Vec<i32>` row_ptrs, `Vec<u32>` col_indices, `Vec<T>` values),
-   construct the StructArray with narrow.csr_matrix extension type. Transfer ownership of all
+   construct the StructArray with ndarrow.csr_matrix extension type. Transfer ownership of all
    three vecs.
 
 6. **Tests**:
@@ -290,7 +290,7 @@ convenience API.
 
 ### Deliverables
 
-- `narrow.csr_matrix` extension type implementation
+- `ndarrow.csr_matrix` extension type implementation
 - `CsrView` type
 - Inbound from extension type and two-column convenience
 - Outbound ownership transfer
@@ -371,7 +371,7 @@ and layout normalization.
 1. **cast**: `PrimitiveArray<T>` -> `PrimitiveArray<U>` element-wise type conversion. Uses
    Arrow's compute kernels where available, falls back to manual conversion.
 
-2. **densify**: `narrow.csr_matrix` (or CsrView) -> `FixedSizeListArray`. Allocates a dense
+2. **densify**: `ndarrow.csr_matrix` (or CsrView) -> `FixedSizeListArray`. Allocates a dense
    buffer, fills from sparse representation. Explicit allocation.
 
 3. **reshape**: `PrimitiveArray<T>` -> `ArrayView2<T>` or `ArrayViewD<T>` with caller-specified
@@ -381,7 +381,7 @@ and layout normalization.
    standard layout. Allocates only if needed.
 
 5. **Tests**: All helpers, including edge cases (empty arrays, single-element, type overflow
-   on narrowing cast).
+   on ndarrowing cast).
 
 ### Deliverables
 

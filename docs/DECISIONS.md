@@ -7,15 +7,15 @@ decision entry that supersedes the old one.
 
 ### D-001: Zero-Copy Bridge Contract
 
-narrow never allocates on the bridge path. Arrow -> ndarray produces views. ndarray -> Arrow
+ndarrow never allocates on the bridge path. Arrow -> ndarray produces views. ndarray -> Arrow
 transfers buffer ownership. The bridge is O(1) in time and O(0) in additional memory.
 
-**Rationale**: The entire purpose of narrow is to avoid the cost of conversion. If the bridge
+**Rationale**: The entire purpose of ndarrow is to avoid the cost of conversion. If the bridge
 allocates, callers might as well copy manually.
 
 ### D-002: ndarray is the Numerical Substrate
 
-narrow maps Arrow types to ndarray types. Not nalgebra, not faer, not raw slices. ndarray is the
+ndarrow maps Arrow types to ndarray types. Not nalgebra, not faer, not raw slices. ndarray is the
 single target because it is the substrate for nabled and provides the view/owned/stride model
 needed for zero-copy.
 
@@ -24,19 +24,19 @@ invariants to maintain.
 
 ### D-003: Vendor Agnosticism
 
-narrow has zero knowledge of any Arrow producer or consumer. It does not import qdrant-client,
+ndarrow has zero knowledge of any Arrow producer or consumer. It does not import qdrant-client,
 datafusion, polars, or any domain crate. It bridges Arrow and ndarray, nothing more.
 
-**Rationale**: narrow is a foundational library. Domain assumptions reduce reusability and create
+**Rationale**: ndarrow is a foundational library. Domain assumptions reduce reusability and create
 coupling that complicates maintenance.
 
 ### D-004: No nabled Dependency
 
-narrow depends on `arrow` and `ndarray`. It does not depend on nabled. If nabled needs view types
-or index generics that narrow would benefit from, those changes happen in nabled. narrow's public
+ndarrow depends on `arrow` and `ndarray`. It does not depend on nabled. If nabled needs view types
+or index generics that ndarrow would benefit from, those changes happen in nabled. ndarrow's public
 API exposes only Arrow and ndarray types.
 
-**Rationale**: narrow must be usable by any ndarray consumer, not just nabled. Coupling to nabled
+**Rationale**: ndarrow must be usable by any ndarray consumer, not just nabled. Coupling to nabled
 would violate vendor agnosticism for the ndarray side.
 
 ### D-005: Algebraic, Compositional, Homomorphic, Denotationally Sound
@@ -97,9 +97,9 @@ single contiguous ndarray (the data is ragged).
 **Rationale**: Canonical Arrow extension type. Handles the ragged case (e.g., multi-vectors)
 without inventing a custom type. Cross-language interop with pyarrow.
 
-### D-014: Sparse Vectors — narrow.csr_matrix Extension Type
+### D-014: Sparse Vectors — ndarrow.csr_matrix Extension Type
 
-A column of sparse vectors uses a narrow-defined extension type `narrow.csr_matrix`. Storage is
+A column of sparse vectors uses a ndarrow-defined extension type `ndarrow.csr_matrix`. Storage is
 `StructArray{indices: List<UInt32>, values: List<T>}`. Metadata carries `ncols` (the dimension
 of the sparse vector space).
 
@@ -116,13 +116,13 @@ Arrow's List offsets are structurally identical to CSR row pointers.
 
 ### D-015: Both f32 and f64 are First-Class
 
-narrow supports both `f32` and `f64` as first-class element types. The trait bridge (`NarrowElement`
+ndarrow supports both `f32` and `f64` as first-class element types. The trait bridge (`NdarrowElement`
 or equivalent) has concrete implementations for both. Neither is preferred or defaulted.
 
 Additional types (complex, integer, f16) may be added. The trait system is extensible.
 
 **Rationale**: Different producers use different types. Qdrant uses f32. Scientific computing
-often uses f64. narrow is vendor-agnostic and must not assume a type.
+often uses f64. ndarrow is vendor-agnostic and must not assume a type.
 
 ## Null Handling
 
@@ -148,7 +148,7 @@ They are not part of the bridge path. They exist in a `helpers` or `nulls` modul
 allocation cost is visible at the call site.
 
 **Rationale**: Null handling strategies (fill with zero, fill with mean, drop rows) are
-domain-specific. narrow provides the tools but does not choose a strategy.
+domain-specific. ndarrow provides the tools but does not choose a strategy.
 
 ## Ownership and Lifetime
 
@@ -184,8 +184,8 @@ be transferred without copying. The allocation is unavoidable and documented.
 
 ### D-040: Canonical Types First
 
-Where a canonical Arrow extension type exists that serves narrow's purpose, narrow uses it.
-narrow does not define custom extension types that duplicate canonical ones.
+Where a canonical Arrow extension type exists that serves ndarrow's purpose, ndarrow uses it.
+ndarrow does not define custom extension types that duplicate canonical ones.
 
 Currently used canonical types:
 - `arrow.fixed_shape_tensor` — fixed-shape tensors (matrices, cubes, higher-rank)
@@ -196,9 +196,9 @@ recognition without additional work.
 
 ### D-041: Custom Types for Gaps
 
-Where no canonical type exists, narrow defines extension types under the `narrow.` namespace.
+Where no canonical type exists, ndarrow defines extension types under the `ndarrow.` namespace.
 Currently defined:
-- `narrow.csr_matrix` — CSR sparse matrix
+- `ndarrow.csr_matrix` — CSR sparse matrix
 
 Custom types implement the `ExtensionType` trait from `arrow_schema::extension` with proper
 serialization, deserialization, and validation.
@@ -213,7 +213,7 @@ makes sparse columns self-describing and enables cross-language handler registra
 The bridge is defined by traits, not standalone functions. Primary traits:
 - `AsNdarray` — Arrow array -> ndarray view (inbound, borrowing)
 - `IntoArrow` — ndarray owned array -> Arrow array (outbound, ownership transfer)
-- `NarrowElement` — bridges Arrow primitive types and ndarray element types
+- `NdarrowElement` — bridges Arrow primitive types and ndarray element types
 
 **Rationale**: Traits make the bridge extensible. New Arrow types or ndarray layouts can be
 supported by implementing the traits. Traits also enable generic code bounded by the bridge
@@ -235,7 +235,7 @@ are clearly separated from the zero-copy bridge. They live in a `helpers` module
 and their names or types make the allocation cost obvious.
 
 **Rationale**: Callers must be able to distinguish zero-cost operations from allocating ones
-at a glance. Mixing them would undermine narrow's performance guarantees.
+at a glance. Mixing them would undermine ndarrow's performance guarantees.
 
 ## Quality
 

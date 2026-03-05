@@ -1,27 +1,27 @@
-# narrow
+# ndarrow
 
-[![Crates.io](https://img.shields.io/crates/v/narrow.svg)](https://crates.io/crates/narrow)
-[![Documentation](https://docs.rs/narrow/badge.svg)](https://docs.rs/narrow)
+[![Crates.io](https://img.shields.io/crates/v/ndarrow.svg)](https://crates.io/crates/ndarrow)
+[![Documentation](https://docs.rs/ndarrow/badge.svg)](https://docs.rs/ndarrow)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/georgeleepatterson/narrow/ci.yml?branch=main)](https://github.com/georgeleepatterson/narrow/actions)
-[![Coverage](https://codecov.io/gh/georgeleepatterson/narrow/branch/main/graph/badge.svg)](https://codecov.io/gh/georgeleepatterson/narrow)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/georgeleepatterson/ndarrow/ci.yml?branch=main)](https://github.com/georgeleepatterson/ndarrow/actions)
+[![Coverage](https://codecov.io/gh/georgeleepatterson/ndarrow/branch/main/graph/badge.svg)](https://codecov.io/gh/georgeleepatterson/ndarrow)
 
 A zero-copy bridge between [Apache Arrow](https://arrow.apache.org/) and
 [ndarray](https://docs.rs/ndarray). Convert Arrow arrays to ndarray views and back without
 allocation overhead.
 
-> narrow is under active development. Public APIs will change until v1. Pin your version.
+> ndarrow is under active development. Public APIs will change until v1. Pin your version.
 
 ## Install
 
 ```toml
 [dependencies]
-narrow = "0.1.0"
+ndarrow = "0.1.0"
 ```
 
 ## What It Does
 
-narrow lets you move data between Arrow and ndarray with zero allocations on the bridge path:
+ndarrow lets you move data between Arrow and ndarray with zero allocations on the bridge path:
 
 - **Arrow to ndarray**: borrow Arrow buffers as ndarray views (O(1), no copy)
 - **ndarray to Arrow**: transfer owned ndarray buffers into Arrow arrays (O(1), ownership move)
@@ -34,7 +34,7 @@ serialization or conversion.
 
 ```rust
 use arrow_array::{Float64Array, FixedSizeListArray};
-use narrow::{AsNdarray, IntoArrow};
+use ndarrow::{AsNdarray, IntoArrow};
 use ndarray::Array1;
 
 // Arrow -> ndarray (zero-copy view)
@@ -55,7 +55,7 @@ let arrow_result = result.into_arrow()?;  // PrimitiveArray<Float64>, no allocat
 | `FixedSizeList<T>(D)` | `ArrayView2<T>` (M, D) | Arrow -> ndarray | Zero-copy |
 | `arrow.fixed_shape_tensor` | `ArrayViewD<T>` | Arrow -> ndarray | Zero-copy |
 | `arrow.variable_shape_tensor` | Per-row `ArrayViewD<T>` | Arrow -> ndarray | Zero-copy |
-| `narrow.csr_matrix` | `CsrView<T>` | Arrow -> ndarray | Zero-copy |
+| `ndarrow.csr_matrix` | `CsrView<T>` | Arrow -> ndarray | Zero-copy |
 | `Array1<T>` | `PrimitiveArray<T>` | ndarray -> Arrow | Zero-copy |
 | `Array2<T>` (M, N) | `FixedSizeList<T>(N)` | ndarray -> Arrow | Zero-copy* |
 | `ArrayD<T>` | `arrow.fixed_shape_tensor` | ndarray -> Arrow | Zero-copy* |
@@ -65,7 +65,7 @@ let arrow_result = result.into_arrow()?;  // PrimitiveArray<Float64>, no allocat
 ## Supported Element Types
 
 - `f32`, `f64` (first-class)
-- Additional types via the `NarrowElement` trait
+- Additional types via the `NdarrowElement` trait
 
 ## Null Handling
 
@@ -84,14 +84,14 @@ let (view, mask) = array.as_ndarray_masked();
 
 ## Extension Types
 
-narrow uses canonical Arrow extension types where they exist:
+ndarrow uses canonical Arrow extension types where they exist:
 
 - `arrow.fixed_shape_tensor` — fixed-shape multi-dimensional data
 - `arrow.variable_shape_tensor` — variable-shape data (e.g., multi-vectors)
 
 And defines its own for gaps:
 
-- `narrow.csr_matrix` — CSR sparse matrix representation
+- `ndarrow.csr_matrix` — CSR sparse matrix representation
 
 ## Performance Guarantee
 

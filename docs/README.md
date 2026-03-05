@@ -1,12 +1,12 @@
-# narrow — Documentation Index
+# ndarrow — Documentation Index
 
 ## Direction Statement
 
-narrow is a zero-copy bridge between Apache Arrow and ndarray. It enables Arrow-native systems to
+ndarrow is a zero-copy bridge between Apache Arrow and ndarray. It enables Arrow-native systems to
 leverage ndarray-native numerical computation without allocation overhead on the bridge path.
 
 Design principles: algebraic, compositional, homomorphic, denotationally sound.
-Vendor stance: agnostic. narrow knows Arrow and ndarray. Nothing else.
+Vendor stance: agnostic. ndarrow knows Arrow and ndarray. Nothing else.
 
 ## Document Index (Reading Order)
 
@@ -41,8 +41,8 @@ After reading docs, verify you can answer all of the following:
 3. Which conversions are zero-copy and which allocate?
 4. What traits define the element type bridge?
 5. What are the three null handling tiers?
-6. What canonical Arrow extension types does narrow use?
-7. What custom extension types does narrow define?
+6. What canonical Arrow extension types does ndarrow use?
+7. What custom extension types does ndarrow define?
 8. What is the ownership transfer mechanism for ndarray -> Arrow?
 9. What are the quality gates and coverage threshold?
 10. What changes are pending in nabled, and what interim artifacts exist?
@@ -51,11 +51,11 @@ If you cannot answer all 10, re-read the relevant document.
 
 ## Scope Boundary
 
-narrow bridges Arrow and ndarray. It does not:
+ndarrow bridges Arrow and ndarray. It does not:
 - Implement numerical algorithms (that's nabled's job)
 - Define query semantics (that's DataFusion's job)
 - Know about vector stores (that's qdrant-datafusion's job)
 - Perform serialization beyond Arrow IPC (that's Arrow's job)
 
-narrow's only job is making the memory layout transition between these two array models
+ndarrow's only job is making the memory layout transition between these two array models
 cost nothing.

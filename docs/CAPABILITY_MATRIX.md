@@ -18,7 +18,7 @@
 | FixedSizeList<f64> -> ArrayView2    | --     | Flat buffer + reshape                        |
 | FixedShapeTensor -> ArrayViewD      | --     | Shape from extension metadata                |
 | VariableShapeTensor -> per-row view | --     | Iterator over per-element ArrayViewD         |
-| narrow.csr_matrix -> CsrView       | --     | Borrow offsets + indices + values            |
+| ndarrow.csr_matrix -> CsrView       | --     | Borrow offsets + indices + values            |
 | Two-column sparse -> CsrView       | --     | Convenience API for separate columns         |
 
 ## Outbound: ndarray -> Arrow (Ownership Transfer)
@@ -30,7 +30,7 @@
 | Array2<f32> -> FixedSizeList        | --     | into_raw_vec + field construction            |
 | Array2<f64> -> FixedSizeList        | --     | into_raw_vec + field construction            |
 | ArrayD<T> -> FixedShapeTensor       | --     | into_raw_vec + shape metadata                |
-| CsrMatrix-like -> narrow.csr_matrix | --     | Transfer row_ptrs, indices, values           |
+| CsrMatrix-like -> ndarrow.csr_matrix | --     | Transfer row_ptrs, indices, values           |
 
 ## Null Handling
 
@@ -48,7 +48,7 @@
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
 | cast f32 -> f64                     | --     | Element-wise widening                        |
-| cast f64 -> f32                     | --     | Element-wise narrowing                       |
+| cast f64 -> f32                     | --     | Element-wise ndarrowing                       |
 | densify sparse -> dense             | --     | Sparse to FixedSizeList                      |
 | reshape PrimitiveArray -> 2D view   | --     | Zero-copy if dimensions align                |
 | reshape PrimitiveArray -> ND view   | --     | Zero-copy if dimensions align                |
@@ -60,7 +60,7 @@
 |-------------------------------------|--------|----------------------------------------------|
 | arrow.fixed_shape_tensor support    | --     | Read/write canonical tensor extension        |
 | arrow.variable_shape_tensor support | --     | Read/write canonical variable tensor         |
-| narrow.csr_matrix definition        | --     | Custom sparse extension type                 |
+| ndarrow.csr_matrix definition        | --     | Custom sparse extension type                 |
 | Extension type registration         | --     | Register handlers for deserialization        |
 
 ## Element Type Support
@@ -80,10 +80,10 @@
 
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
-| NarrowElement trait                 | --     | Type bridge: Arrow <-> ndarray               |
+| NdarrowElement trait                 | --     | Type bridge: Arrow <-> ndarray               |
 | AsNdarray trait                     | --     | Inbound conversion contract                  |
 | IntoArrow trait                     | --     | Outbound conversion contract                 |
-| NarrowError enum                    | --     | Error taxonomy                               |
+| NdarrowError enum                    | --     | Error taxonomy                               |
 | Prelude module                      | --     | Convenience re-exports                       |
 
 ## Quality Infrastructure

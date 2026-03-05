@@ -2,7 +2,7 @@
 
 ## Summary
 
-narrow is in the **planning complete / pre-implementation** state. All architectural decisions
+ndarrow is in the **planning complete / pre-implementation** state. All architectural decisions
 are locked. Documentation structure mirrors nabled's patterns. Implementation has not begun.
 
 ## Crate State
@@ -44,13 +44,13 @@ See `NABLED_CHANGES.md` for full details.
 
 | Change                           | Crate   | Status    | Blocking? |
 |----------------------------------|---------|-----------|-----------|
-| f32 first-class API support      | nabled  | Not started | No — narrow uses ndarray directly |
-| CsrMatrixView with Arrow-native index types | nabled | Not started | No — narrow defines its own CsrView |
-| Generic float trait              | nabled  | Not started | No — narrow's NarrowElement is independent |
+| f32 first-class API support      | nabled  | Not started | No — ndarrow uses ndarray directly |
+| CsrMatrixView with Arrow-native index types | nabled | Not started | No — ndarrow defines its own CsrView |
+| Generic float trait              | nabled  | Not started | No — ndarrow's NdarrowElement is independent |
 
-None of the nabled changes block narrow's implementation. narrow uses ndarray directly and
+None of the nabled changes block ndarrow's implementation. ndarrow uses ndarray directly and
 defines its own view types. nabled changes will improve end-to-end ergonomics when both crates
-are used together, but narrow is independently functional.
+are used together, but ndarrow is independently functional.
 
 ## Constraints In Force
 

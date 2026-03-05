@@ -8,8 +8,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,19 +28,23 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@master
         id: filter
         with:
+          predicate-quantifier: 'every'
           filters: |
             code:
-              - '**/*.rs'
-              - '**/Cargo.toml'
-              - '**/Cargo.lock'
-              - '.github/workflows/ci.yml'
-              - '.justfile'
-              - 'rustfmt.toml'
-              - 'clippy.toml'
+              - '**'
+              - '!**.md'
+              - '!docs/**'
+              - '!.claude/**'
+              - '!.gitignore'
+              - '!LICENSE'
+              - '!.github/workflows/pr.yml'
+              - '!.github/workflows/security.yml'
+              - '!.github/dependabot.yml'
+              - '!.github/labeler.yml'
 
   # ── Check (fmt + clippy + compile) ──
   check:
@@ -45,7 +53,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -69,13 +77,13 @@ jobs:
             ${{ runner.os }}-cargo-check-
 
       - name: Check formatting
-        run: cargo +nightly fmt -- --check
+        run: cargo +nightly fmt --all -- --check
 
       - name: Clippy (no default features)
-        run: cargo +stable clippy --workspace --no-default-features -- -D warnings
+        run: cargo +stable clippy --workspace --all-targets --no-default-features -- -D warnings -W clippy::pedantic
 
       - name: Clippy (all features)
-        run: cargo +stable clippy --workspace --all-features -- -D warnings
+        run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
 
       - name: Compile check (no default features)
         run: cargo +stable check --workspace --no-default-features
@@ -90,7 +98,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -116,7 +124,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -133,7 +141,7 @@ jobs:
             ${{ runner.os }}-cargo-test-
 
       - name: Integration tests
-        run: cargo test -p narrow --tests -- --nocapture --show-output
+        run: cargo test -p ndarrow --tests -- --nocapture --show-output
 
   # ── Coverage ──
   coverage:
@@ -142,7 +150,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -169,10 +177,10 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
-          fail_ci_if_error: false
+          fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
   # ── Benchmark smoke ──
@@ -182,13 +190,13 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install just
-        uses: extractions/setup-just@v2
+        uses: taiki-e/install-action@just
 
       - name: Cache cargo
         uses: actions/cache@v4

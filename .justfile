@@ -20,7 +20,7 @@ test-one test_name:
     RUST_LOG={{ LOG }} cargo test --workspace "{{ test_name }}" -- --nocapture --show-output
 
 test-integration:
-    RUST_LOG={{ LOG }} cargo test -p narrow --tests -- --nocapture --show-output
+    RUST_LOG={{ LOG }} cargo test -p ndarrow --tests -- --nocapture --show-output
 
 test-integration-all:
     RUST_LOG={{ LOG }} cargo test --workspace --tests -- --nocapture --show-output
@@ -71,13 +71,20 @@ fmt-fix:
     cargo +nightly fmt
 
 clippy:
-    cargo clippy --workspace -- -D warnings
+    just -f {{ justfile() }} clippy-no-default
+    just -f {{ justfile() }} clippy-all-features
+
+clippy-no-default:
+    cargo +stable clippy --workspace --all-targets --no-default-features -- -D warnings -W clippy::pedantic
+
+clippy-all-features:
+    cargo +stable clippy --workspace --all-targets --all-features -- -D warnings -W clippy::pedantic
 
 clippy-fix:
-    cargo clippy --workspace --fix --allow-dirty
+    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty
 
 fix:
-    cargo clippy --workspace --fix --allow-dirty
+    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty
     cargo +nightly fmt
 
 # --- FEATURE CHECKS ---
@@ -85,7 +92,6 @@ fix:
 check-features:
     cargo check --workspace --no-default-features
     cargo check --workspace --all-features
-    cargo check --workspace
 
 # --- MAINTENANCE ---
 
@@ -128,37 +134,115 @@ bench-baseline-update:
 prepare-release version:
     #!/usr/bin/env bash
     set -euo pipefail
-    VERSION="{{ version }}"
-    echo "Preparing release v${VERSION}..."
-
-    # Update workspace version
-    sed -i '' "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
-
-    # Generate changelog
-    if command -v git-cliff &>/dev/null; then
-        git-cliff --tag "v${VERSION}" -o CHANGELOG.md
-        echo "Changelog updated."
-    else
-        echo "git-cliff not found, skipping changelog generation."
+    if ! [[ "{{ version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Version must be in format X.Y.Z (e.g., 0.2.0)"
+        exit 1
     fi
 
-    # Run all checks
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        echo "Error: Working tree is not clean. Commit or stash changes first."
+        exit 1
+    fi
+
+    if ! command -v git-cliff >/dev/null 2>&1; then
+        echo "Error: git-cliff is required for release preparation."
+        echo "Install it with: cargo install git-cliff"
+        exit 1
+    fi
+
+    VERSION="{{ version }}"
+    BRANCH="release-v${VERSION}"
+
+    git checkout -b "${BRANCH}"
+
+    # Update [workspace.package] version in Cargo.toml.
+    awk -v version="${VERSION}" '
+      /^\[workspace\.package\]/ { in_workspace_package = 1 }
+      in_workspace_package && /^version = / {
+        sub(/"[^"]+"/, "\"" version "\"")
+        in_workspace_package = 0
+      }
+      { print }
+    ' Cargo.toml > Cargo.toml.tmp
+    mv Cargo.toml.tmp Cargo.toml
+
+    # Keep README dependency snippet in sync.
+    perl -0pi.bak -e "s/ndarrow = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/ndarrow = \"${VERSION}\"/g" README.md
+    rm -f README.md.bak
+
+    cargo update --workspace
+    cargo package --allow-dirty -p ndarrow
+
+    git-cliff -o CHANGELOG.md
+    git-cliff --unreleased --tag "v${VERSION}" --strip header -o RELEASE_NOTES.md
+
     just -f {{ justfile() }} checks
 
+    git add Cargo.toml Cargo.lock README.md RELEASE_NOTES.md
+    if [ -f CHANGELOG.md ]; then
+        git add CHANGELOG.md
+    fi
+    git commit -m "chore: prepare release v${VERSION}"
+    git push --set-upstream origin "${BRANCH}"
+
     echo ""
-    echo "Release v${VERSION} prepared."
-    echo "Review changes, then commit and tag."
+    echo "Release preparation complete."
+    echo "Next steps:"
+    echo "1. Open and merge PR from ${BRANCH}"
+    echo "2. Run: just tag-release ${VERSION}"
 
 tag-release version:
     #!/usr/bin/env bash
     set -euo pipefail
-    VERSION="{{ version }}"
-    git tag -a "v${VERSION}" -m "Release v${VERSION}"
-    echo "Tagged v${VERSION}. Push with: git push origin v${VERSION}"
+    if ! [[ "{{ version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Version must be in format X.Y.Z (e.g., 0.2.0)"
+        exit 1
+    fi
 
-release-dry:
-    cargo package -p narrow --list
-    cargo package -p narrow
+    VERSION="{{ version }}"
+
+    git checkout main
+    git pull origin main
+
+    CARGO_VERSION=$(awk '
+      /^\[workspace\.package\]/ { in_workspace_package = 1; next }
+      in_workspace_package && /^version = / {
+        gsub(/"/, "", $3)
+        print $3
+        exit
+      }
+    ' Cargo.toml)
+
+    if [[ "${CARGO_VERSION}" != "${VERSION}" ]]; then
+        echo "Error: Cargo.toml workspace version (${CARGO_VERSION}) != requested version (${VERSION})"
+        exit 1
+    fi
+
+    cargo publish --dry-run -p ndarrow --no-verify
+    git tag -a "v${VERSION}" -m "Release v${VERSION}"
+    git push origin "v${VERSION}"
+
+    echo ""
+    echo "Tag v${VERSION} pushed."
+    echo "GitHub release workflow should start automatically."
+
+release-dry version:
+    @echo "This would:"
+    @echo "1. Validate semver {{ version }}"
+    @echo "2. Require a clean tree"
+    @echo "3. Create and push branch release-v{{ version }}"
+    @echo "4. Update Cargo.toml [workspace.package] version to {{ version }}"
+    @echo "5. Update README dependency snippet"
+    @echo "6. Update Cargo.lock and run cargo package -p ndarrow"
+    @echo "7. Generate CHANGELOG.md and RELEASE_NOTES.md"
+    @echo "8. Run just checks"
+    @echo "9. Commit release prep"
+    @echo ""
+    @echo "After merge, tag-release would:"
+    @echo "1. Verify main is up to date"
+    @echo "2. Verify workspace version matches {{ version }}"
+    @echo "3. Run cargo publish --dry-run -p ndarrow --no-verify"
+    @echo "4. Create and push tag v{{ version }}"
 
 # --- DEVELOPMENT SETUP ---
 

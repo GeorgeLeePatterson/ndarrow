@@ -3,11 +3,11 @@
 ## Purpose
 
 This document tracks:
-1. Changes needed in nabled to improve interop with narrow
-2. Temporary structures in narrow that exist as interim solutions
-3. The cohesion state between narrow and nabled
+1. Changes needed in nabled to improve interop with ndarrow
+2. Temporary structures in ndarrow that exist as interim solutions
+3. The cohesion state between ndarrow and nabled
 
-**Critical**: None of these changes block narrow's development. narrow uses ndarray directly
+**Critical**: None of these changes block ndarrow's development. ndarrow uses ndarray directly
 and defines its own types. These changes improve end-to-end ergonomics when both crates are
 used together.
 
@@ -19,7 +19,7 @@ used together.
 
 **Status**: Not started
 **Priority**: High
-**Blocking narrow?**: No
+**Blocking ndarrow?**: No
 
 **Description**: nabled's core API is f64-only for real-valued operations. All functions take
 `&Array2<f64>`, `&ArrayView2<f64>`, etc. To support Arrow data natively (which is often f32,
@@ -37,15 +37,15 @@ especially from embedding models), nabled needs f32 support.
 **Recommendation**: Option 1 (generic float trait) for new code. Migrate existing functions
 incrementally.
 
-**Impact on narrow**: Without this, callers must cast f32 -> f64 before calling nabled, then
-cast f64 -> f32 to go back to Arrow. narrow provides the cast helper, but the round-trip
+**Impact on ndarrow**: Without this, callers must cast f32 -> f64 before calling nabled, then
+cast f64 -> f32 to go back to Arrow. ndarrow provides the cast helper, but the round-trip
 allocation is suboptimal.
 
 ### NC-002: CsrMatrixView with Arrow-Native Index Types
 
 **Status**: Not started
 **Priority**: High
-**Blocking narrow?**: No
+**Blocking ndarrow?**: No
 
 **Description**: nabled's `CsrMatrix` uses `Vec<usize>` for `row_ptrs` and `col_indices`.
 Arrow uses `i32` for List offsets and `u32` for index values. On 64-bit systems, `usize` is
@@ -63,15 +63,15 @@ Arrow uses `i32` for List offsets and `u32` for index values. On 64-bit systems,
 **Recommendation**: Option 1 (CsrMatrixView). It's additive, doesn't break existing API, and
 enables zero-copy from Arrow.
 
-**Impact on narrow**: Without this, narrow's `CsrView` holds Arrow-native types (`&[i32]`,
-`&[u32]`) but callers must convert to `usize` before passing to nabled. narrow provides the
+**Impact on ndarrow**: Without this, ndarrow's `CsrView` holds Arrow-native types (`&[i32]`,
+`&[u32]`) but callers must convert to `usize` before passing to nabled. ndarrow provides the
 view; the conversion cost falls on the caller or nabled.
 
 ### NC-003: View-Accepting Sparse Operations
 
 **Status**: Not started
 **Priority**: Medium
-**Blocking narrow?**: No
+**Blocking ndarrow?**: No
 
 **Description**: nabled's sparse operations take owned `CsrMatrix`. For zero-copy from Arrow,
 operations should also accept borrowed `CsrMatrixView` (from NC-002).
@@ -86,20 +86,20 @@ operations should also accept borrowed `CsrMatrixView` (from NC-002).
 
 **Status**: Not started
 **Priority**: Low
-**Blocking narrow?**: No
+**Blocking ndarrow?**: No
 
 **Description**: nabled supports Complex64 and Complex32. Arrow does not have native complex
 types (they would need a custom extension type or struct representation). Assess whether
-complex type bridging through narrow is needed and what the Arrow representation should be.
+complex type bridging through ndarrow is needed and what the Arrow representation should be.
 
-**Impact on narrow**: narrow's `NarrowElement` trait currently covers f32 and f64. Complex
+**Impact on ndarrow**: ndarrow's `NdarrowElement` trait currently covers f32 and f64. Complex
 types would need a different approach (possibly struct-based Arrow representation).
 
 ---
 
-## Interim Artifacts in narrow
+## Interim Artifacts in ndarrow
 
-These structures exist in narrow as self-contained solutions. They may be simplified or
+These structures exist in ndarrow as self-contained solutions. They may be simplified or
 replaced when nabled changes land.
 
 ### IA-001: CsrView Type
@@ -117,33 +117,33 @@ pub struct CsrView<'a, T> {
 }
 ```
 
-**Interim because**: When nabled introduces `CsrMatrixView<'a, I, T>` (NC-002), narrow's
-`CsrView` could potentially be replaced by or unified with nabled's type. However, narrow
-should NOT depend on nabled, so this type may remain as narrow's own representation even after
+**Interim because**: When nabled introduces `CsrMatrixView<'a, I, T>` (NC-002), ndarrow's
+`CsrView` could potentially be replaced by or unified with nabled's type. However, ndarrow
+should NOT depend on nabled, so this type may remain as ndarrow's own representation even after
 NC-002 lands.
 
-**Resolution**: Keep `CsrView` as narrow's own type. If nabled's `CsrMatrixView` has the same
-layout, callers can transmute or construct one from the other with zero cost. narrow never
+**Resolution**: Keep `CsrView` as ndarrow's own type. If nabled's `CsrMatrixView` has the same
+layout, callers can transmute or construct one from the other with zero cost. ndarrow never
 imports nabled.
 
-### IA-002: NarrowElement Trait
+### IA-002: NdarrowElement Trait
 
 **Location**: `src/element.rs` (planned)
 **Purpose**: Bridges Arrow primitive types and ndarray element types
 
 **Interim because**: If nabled introduces a generic float trait (NC-001), there may be overlap.
-However, narrow's trait bridges Arrow and ndarray, not ndarray and linalg. The traits serve
+However, ndarrow's trait bridges Arrow and ndarray, not ndarray and linalg. The traits serve
 different purposes and should remain separate.
 
-**Resolution**: Keep as permanent. NarrowElement is narrow's own abstraction. It may share
+**Resolution**: Keep as permanent. NdarrowElement is ndarrow's own abstraction. It may share
 implementations with nabled's float trait but is defined independently.
 
 ---
 
 ## Qdrant-DataFusion Changes
 
-These changes are needed in qdrant-datafusion to leverage narrow effectively. They are tracked
-here for completeness but are not narrow's responsibility.
+These changes are needed in qdrant-datafusion to leverage ndarrow effectively. They are tracked
+here for completeness but are not ndarrow's responsibility.
 
 ### QD-001: Dense Vectors as FixedSizeList
 
@@ -160,9 +160,9 @@ where D is the vector dimension from collection config.
 **Rationale**: Inner FixedSizeList ensures each embedding has fixed dimension, enabling
 zero-copy per-point ArrayView2.
 
-### QD-003: Sparse Vectors as narrow.csr_matrix
+### QD-003: Sparse Vectors as ndarrow.csr_matrix
 
-**Description**: Consider using narrow's CSR extension type instead of two separate columns
+**Description**: Consider using ndarrow's CSR extension type instead of two separate columns
 for sparse vectors.
 
 **Rationale**: Self-describing column with ncols metadata. Single column per sparse vector
@@ -180,16 +180,16 @@ interop with Python ML pipelines.
 
 ## Cohesion State
 
-| Aspect                  | narrow State       | nabled State       | Cohesion |
+| Aspect                  | ndarrow State       | nabled State       | Cohesion |
 |-------------------------|--------------------|--------------------|----------|
-| f32 support             | Planned (NarrowElement for f32) | f64 only  | Gap — NC-001 |
-| f64 support             | Planned (NarrowElement for f64) | Full      | Aligned  |
+| f32 support             | Planned (NdarrowElement for f32) | f64 only  | Gap — NC-001 |
+| f64 support             | Planned (NdarrowElement for f64) | Full      | Aligned  |
 | Dense views             | Planned (ArrayView1/2)         | Accepts views | Aligned  |
 | Sparse views            | Planned (CsrView<i32,u32>)     | CsrMatrix<usize> | Gap — NC-002 |
 | Tensor views            | Planned (ArrayViewD)           | Accepts ArrayD | Aligned  |
 | Owned array transfer    | Planned (IntoArrow)            | Returns owned  | Aligned  |
 | Complex types           | Not planned yet                 | Complex64/32   | Gap — NC-004 |
 
-**Overall**: narrow and nabled are architecturally compatible. The ndarray type system is the
+**Overall**: ndarrow and nabled are architecturally compatible. The ndarray type system is the
 common language. Gaps exist in f32 support and sparse index types, both addressable with
-additive nabled changes. No narrow design decisions are blocked by nabled's current state.
+additive nabled changes. No ndarrow design decisions are blocked by nabled's current state.

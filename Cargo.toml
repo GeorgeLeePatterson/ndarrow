@@ -8,9 +8,9 @@ edition = "2024"
 rust-version = "1.85"
 authors = ["George Lee Patterson <patterson.george@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/georgeleepatterson/narrow"
-homepage = "https://github.com/georgeleepatterson/narrow"
-documentation = "https://docs.rs/narrow"
+repository = "https://github.com/georgeleepatterson/ndarrow"
+homepage = "https://github.com/georgeleepatterson/ndarrow"
+documentation = "https://docs.rs/ndarrow"
 
 [workspace.dependencies]
 # Arrow
@@ -21,6 +21,7 @@ arrow-schema = { version = "55", features = ["canonical_extension_types"] }
 
 # Ndarray
 ndarray = "0.17"
+num-traits = "0.2"
 
 # Testing
 approx = "0.5"

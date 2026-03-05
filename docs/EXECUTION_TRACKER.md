@@ -45,8 +45,8 @@ Use this to resume work after context compaction.
 | ID    | Description                                          | Phase | Priority |
 |-------|------------------------------------------------------|-------|----------|
 | N-001 | Update Cargo.toml with arrow and ndarray deps        | 1     | P0       |
-| N-002 | Implement NarrowError enum                           | 1     | P0       |
-| N-003 | Implement NarrowElement trait + f32/f64 impls        | 1     | P0       |
+| N-002 | Implement NdarrowError enum                           | 1     | P0       |
+| N-003 | Implement NdarrowElement trait + f32/f64 impls        | 1     | P0       |
 | N-004 | Define AsNdarray and IntoArrow trait stubs           | 1     | P0       |
 | N-005 | Create module tree (inbound/, outbound/, ext/, etc.) | 1     | P0       |
 | N-006 | Wire lib.rs with modules and prelude                 | 1     | P0       |
@@ -56,7 +56,7 @@ Use this to resume work after context compaction.
 | N-010 | Array1 -> PrimitiveArray impl                        | 3     | P0       |
 | N-011 | Array2 -> FixedSizeList impl                         | 3     | P0       |
 | N-012 | Three-tier null API on all impls                     | 4     | P0       |
-| N-013 | narrow.csr_matrix extension type definition          | 5     | P1       |
+| N-013 | ndarrow.csr_matrix extension type definition          | 5     | P1       |
 | N-014 | CsrView type definition                              | 5     | P1       |
 | N-015 | Sparse inbound (extension type + two-column)         | 5     | P1       |
 | N-016 | Sparse outbound                                       | 5     | P1       |
@@ -86,5 +86,5 @@ Use this to resume work after context compaction.
 | K-004 | Verify FixedShapeTensor API in arrow-rs              | May need canonical_extension_types feature |
 | K-005 | Determine if arrow-rs VariableShapeTensor is stable  | Check feature gate status          |
 | K-006 | Design CsrView ergonomics for nabled interop         | See NABLED_CHANGES.md              |
-| K-007 | Decide on Complex32/Complex64 NarrowElement impls    | Arrow complex type support unclear |
+| K-007 | Decide on Complex32/Complex64 NdarrowElement impls    | Arrow complex type support unclear |
 | K-008 | Evaluate proptest vs quickcheck for property tests   | proptest preferred for shrinking   |

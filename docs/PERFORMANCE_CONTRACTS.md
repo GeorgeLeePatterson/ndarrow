@@ -2,7 +2,7 @@
 
 ## Core Contract
 
-narrow is a zero-cost bridge. The following invariants are absolute:
+ndarrow is a zero-cost bridge. The following invariants are absolute:
 
 ### Rule 1: Bridge Conversions Do Not Allocate
 
@@ -57,14 +57,14 @@ These are documented at the function level and at the type level.
 | Operation                        | Mechanism                              | Complexity |
 |----------------------------------|----------------------------------------|------------|
 | cast f32 -> f64                  | Allocate new buffer, widen each element| O(N)       |
-| cast f64 -> f32                  | Allocate new buffer, narrow each elem  | O(N)       |
+| cast f64 -> f32                  | Allocate new buffer, ndarrow each elem  | O(N)       |
 | densify(sparse, D)               | Allocate (M * D) buffer, fill          | O(M * D)   |
 | fill_nulls(array, value)         | Allocate new buffer, copy + fill       | O(N)       |
 | compact_non_null(array)          | Allocate smaller buffer, copy valid    | O(N)       |
 | Array2 (non-std) -> FSL         | as_standard_layout allocates copy      | O(M * N)   |
 | VarShapeTensor outbound          | Pack ragged arrays into struct         | O(total)   |
 
-### Computation Allocations (Expected, Not narrow's)
+### Computation Allocations (Expected, Not ndarrow's)
 
 | Operation                        | Source    | Notes                             |
 |----------------------------------|-----------|-----------------------------------|
@@ -72,7 +72,7 @@ These are documented at the function level and at the type level.
 | cosine_similarity batch          | nabled    | Allocates result Array1           |
 | Any nabled operation             | nabled    | Allocates owned result arrays     |
 
-These are not narrow's allocations. narrow's job is to make the bridge free so that computation
+These are not ndarrow's allocations. ndarrow's job is to make the bridge free so that computation
 allocations are the only ones that occur.
 
 ## Verification Strategy
@@ -81,7 +81,7 @@ allocations are the only ones that occur.
 
 - View-producing functions return `ArrayView*` types, which cannot own data
 - `IntoArrow` consumes `self`, preventing double-use of the source buffer
-- `NarrowElement` trait bounds ensure type safety at compile time
+- `NdarrowElement` trait bounds ensure type safety at compile time
 
 ### Runtime
 
