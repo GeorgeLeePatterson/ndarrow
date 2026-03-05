@@ -29,6 +29,9 @@ approx = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 
+[lib]
+bench = false
+
 [[bench]]
 name = "inbound_benchmarks"
 harness = false

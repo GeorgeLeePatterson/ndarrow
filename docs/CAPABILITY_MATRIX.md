@@ -12,10 +12,10 @@
 
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
-| PrimitiveArray<f32> -> ArrayView1   | --     | Trivial slice borrow                         |
-| PrimitiveArray<f64> -> ArrayView1   | --     | Trivial slice borrow                         |
-| FixedSizeList<f32> -> ArrayView2    | --     | Flat buffer + reshape                        |
-| FixedSizeList<f64> -> ArrayView2    | --     | Flat buffer + reshape                        |
+| PrimitiveArray<f32> -> ArrayView1   | Done   | Implemented via `AsNdarray`                  |
+| PrimitiveArray<f64> -> ArrayView1   | Done   | Implemented via `AsNdarray`                  |
+| FixedSizeList<f32> -> ArrayView2    | Done   | Implemented (`validated`/`unchecked`/`masked`) |
+| FixedSizeList<f64> -> ArrayView2    | Done   | Implemented (`validated`/`unchecked`/`masked`) |
 | FixedShapeTensor -> ArrayViewD      | --     | Shape from extension metadata                |
 | VariableShapeTensor -> per-row view | --     | Iterator over per-element ArrayViewD         |
 | ndarrow.csr_matrix -> CsrView       | --     | Borrow offsets + indices + values            |
@@ -25,10 +25,10 @@
 
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
-| Array1<f32> -> PrimitiveArray       | --     | into_raw_vec -> ScalarBuffer                 |
-| Array1<f64> -> PrimitiveArray       | --     | into_raw_vec -> ScalarBuffer                 |
-| Array2<f32> -> FixedSizeList        | --     | into_raw_vec + field construction            |
-| Array2<f64> -> FixedSizeList        | --     | into_raw_vec + field construction            |
+| Array1<f32> -> PrimitiveArray       | Done   | Implemented via `IntoArrow`                  |
+| Array1<f64> -> PrimitiveArray       | Done   | Implemented via `IntoArrow`                  |
+| Array2<f32> -> FixedSizeList        | Done   | Implemented via `IntoArrow`                  |
+| Array2<f64> -> FixedSizeList        | Done   | Implemented via `IntoArrow`                  |
 | ArrayD<T> -> FixedShapeTensor       | --     | into_raw_vec + shape metadata                |
 | CsrMatrix-like -> ndarrow.csr_matrix | --     | Transfer row_ptrs, indices, values           |
 
@@ -36,9 +36,9 @@
 
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
-| Validated (null_count check)        | --     | Default tier, returns Result                 |
-| Unchecked (caller guarantees)       | --     | Zero-cost, unsafe                            |
-| Masked (view + validity bitmap)     | --     | Returns tuple, zero allocation               |
+| Validated (null_count check)        | Done   | Default tier, returns Result                 |
+| Unchecked (caller guarantees)       | Done   | Zero-cost, unsafe                            |
+| Masked (view + validity bitmap)     | Done   | Returns tuple, zero allocation               |
 | fill_nulls(zero)                    | --     | Allocating helper                            |
 | fill_nulls(mean)                    | --     | Allocating helper, requires float type       |
 | compact_non_null                    | --     | Allocating helper, removes null rows         |
@@ -67,8 +67,8 @@
 
 | Type       | Inbound | Outbound | Notes                               |
 |------------|---------|----------|-------------------------------------|
-| f32        | --      | --       | First-class, primary                |
-| f64        | --      | --       | First-class, primary                |
+| f32        | Done    | Done     | First-class, primary                |
+| f64        | Done    | Done     | First-class, primary                |
 | Complex32  | --      | --       | Future, pending trait bounds        |
 | Complex64  | --      | --       | Future, pending trait bounds        |
 | i32        | --      | --       | Future, for index arrays            |
@@ -80,18 +80,18 @@
 
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
-| NdarrowElement trait                 | --     | Type bridge: Arrow <-> ndarray               |
-| AsNdarray trait                     | --     | Inbound conversion contract                  |
-| IntoArrow trait                     | --     | Outbound conversion contract                 |
-| NdarrowError enum                    | --     | Error taxonomy                               |
+| NdarrowElement trait                 | Done   | Type bridge: Arrow <-> ndarray               |
+| AsNdarray trait                     | Done   | Inbound conversion contract                  |
+| IntoArrow trait                     | Done   | Outbound conversion contract                 |
+| NdarrowError enum                    | Done   | Error taxonomy                               |
 | Prelude module                      | --     | Convenience re-exports                       |
 
 ## Quality Infrastructure
 
 | Capability                          | Status | Notes                                        |
 |-------------------------------------|--------|----------------------------------------------|
-| justfile                            | --     | Build/test/lint/coverage commands             |
-| CI pipeline                         | --     | GitHub Actions                               |
-| Coverage >= 90%                     | --     | cargo llvm-cov                               |
-| Benchmarks                          | --     | Conversion overhead measurement              |
+| justfile                            | Done   | Build/test/lint/coverage/release commands    |
+| CI pipeline                         | Done   | GitHub Actions                               |
+| Coverage >= 90%                     | Done   | Gate configured in just/CI                   |
+| Benchmarks                          | Done   | Public API conversion benchmark suites       |
 | Property tests                      | --     | Round-trip Arrow -> ndarray -> Arrow          |

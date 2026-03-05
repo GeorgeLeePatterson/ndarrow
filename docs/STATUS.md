@@ -1,68 +1,60 @@
 # Status — Current Snapshot
 
+Last updated: 2026-03-05
+
 ## Summary
 
-ndarrow is in the **planning complete / pre-implementation** state. All architectural decisions
-are locked. Documentation structure mirrors nabled's patterns. Implementation has not begun.
+ndarrow is in the **foundation complete / dense bridge implemented** state.
+Core traits, error model, dense inbound/outbound conversions, explicit null handling tiers, CI,
+and release automation are implemented.
+
+Sparse, tensor extension-type support, and helper APIs remain pending.
 
 ## Crate State
 
-| Aspect                | Status                                        |
-|-----------------------|-----------------------------------------------|
-| Cargo.toml            | Skeleton only. No dependencies yet.           |
-| src/lib.rs            | Doc comment only. No code.                    |
-| Module tree           | Not created. Defined in architecture.md.      |
-| Dependencies          | None. arrow + ndarray to be added in Phase 1. |
-| Tests                 | None.                                         |
-| CI                    | None.                                         |
-| Coverage              | N/A                                           |
+| Aspect                | Status |
+|-----------------------|--------|
+| Cargo.toml            | Workspace and crate dependencies configured (`arrow*`, `ndarray`, test/tooling deps). |
+| src/lib.rs            | Public API module wiring and re-exports implemented. |
+| Module tree           | `element`, `error`, `inbound`, `outbound` implemented. |
+| Dependencies          | Added and pinned at workspace level. |
+| Tests                 | Unit + integration tests for dense, null semantics, and zero-copy behavior. |
+| CI                    | Implemented (`fmt`, `clippy`, feature checks, unit/integration tests, coverage, bench smoke). |
+| Coverage              | Gate configured at 90% line coverage. |
 
-## Design State
+## Implemented Capability Baseline
 
-| Aspect                     | Status    | Document                  |
-|----------------------------|-----------|---------------------------|
-| Type mappings              | Locked    | DECISIONS.md D-010..D-015 |
-| Trait hierarchy            | Locked    | DECISIONS.md D-050..D-052 |
-| Null handling              | Locked    | DECISIONS.md D-020..D-021 |
-| Ownership model            | Locked    | DECISIONS.md D-030..D-032 |
-| Extension types            | Locked    | DECISIONS.md D-040..D-041 |
-| Module structure           | Locked    | architecture.md           |
-| Error model                | Locked    | architecture.md           |
-| Allocation contract        | Locked    | PERFORMANCE_CONTRACTS.md  |
-| Implementation plan        | Locked    | ROADMAP.md                |
-
-## Dependencies on External Crates
-
-| Crate       | Expected Version | Purpose                        | Status      |
-|-------------|-----------------|--------------------------------|-------------|
-| arrow       | Latest stable   | Arrow array types, ext types   | Not added   |
-| ndarray     | 0.17            | Array views and owned arrays   | Not added   |
+1. `NdarrowElement` trait with `f32`/`f64` support.
+2. `NdarrowError` taxonomy.
+3. `AsNdarray` for `PrimitiveArray<T>`.
+4. `FixedSizeListArray -> ArrayView2<T>` conversion APIs (`validated`, `unchecked`, `masked`).
+5. `IntoArrow` for `Array1<T>` and `Array2<T>`.
+6. Integration tests for round-trip correctness and zero-copy pointer guarantees.
+7. Benchmark harness with smoke-compatible public API conversion benchmarks.
 
 ## Dependencies on Upstream Changes
 
-See `NABLED_CHANGES.md` for full details.
+See `NABLED_CHANGES.md` for detail.
 
-| Change                           | Crate   | Status    | Blocking? |
-|----------------------------------|---------|-----------|-----------|
-| f32 first-class API support      | nabled  | Not started | No — ndarrow uses ndarray directly |
-| CsrMatrixView with Arrow-native index types | nabled | Not started | No — ndarrow defines its own CsrView |
-| Generic float trait              | nabled  | Not started | No — ndarrow's NdarrowElement is independent |
-
-None of the nabled changes block ndarrow's implementation. ndarrow uses ndarray directly and
-defines its own view types. nabled changes will improve end-to-end ergonomics when both crates
-are used together, but ndarrow is independently functional.
+| Change | Crate | Status | Blocking? |
+|--------|-------|--------|-----------|
+| First-class `f32` support | nabled | Completed in nabled `main`; publish pending | No |
+| `CsrMatrixView` with Arrow-native index types | nabled | Completed in nabled `main`; publish pending | No |
+| View-accepting sparse ops | nabled | Completed in nabled `main`; publish pending | No |
+| Complex Arrow representation assessment | nabled | Out of nabled scope (tracked on ndarrow side) | No |
 
 ## Constraints In Force
 
-1. Zero-copy bridge — no allocations on the conversion path
-2. Vendor-agnostic — no knowledge of Qdrant, DataFusion, etc.
-3. ndarray-independent — no dependency on nabled
-4. Algebraic, compositional, homomorphic, denotationally sound
-5. Test coverage >= 90%
-6. Clippy -D warnings
-7. Documentation on every public item
+1. Zero-copy bridge semantics for view/ownership-transfer paths.
+2. Vendor agnosticism (no producer/consumer coupling).
+3. ndarray independence (no hard dependency on nabled).
+4. Explicit null handling at call sites.
+5. Quality gates: `fmt`, `clippy -D warnings -W clippy::pedantic`, coverage >= 90%.
 
 ## Next Milestone
 
-**Phase 1: Foundation** — Create crate skeleton, core traits, error types, module tree.
-See ROADMAP.md Phase 1 and EXECUTION_TRACKER.md N-001 through N-007.
+**Phase 5+ backlog**:
+
+1. Sparse extension and `CsrView` APIs.
+2. Tensor extension-type inbound/outbound APIs.
+3. Explicit helper APIs (`cast`, `densify`, `reshape`) and property-test expansion.

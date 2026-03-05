@@ -63,6 +63,7 @@ venv.bak/
 
 # AI
 CLAUDE_*.md
+.claude
 
 # Documentation build
 /doc/
