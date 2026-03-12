@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Expands public apis to support more complex, row-based arrays
+
+## [0.0.2] - 2026-03-05
+
+### Bug Fixes
+
 - Impls and updates sparse, tensor, and helper APIs
 - Adds property tests, expands helpers, updates some tooling
 - Completes complex bridges, null helper behavior, and extension registry coverage
@@ -17,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Updates docs, addresses ci
 - Updates ci and pr
 - Fixes dependabot
+- Prepare release v0.0.2 (#14)
 
 ## [0.0.1] - 2026-03-05
 
