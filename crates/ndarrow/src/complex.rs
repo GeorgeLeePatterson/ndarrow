@@ -576,6 +576,10 @@ pub fn complex32_variable_shape_tensor_iter<'a>(
     field: &Field,
     array: &'a StructArray,
 ) -> Result<Complex32VariableShapeTensorIter<'a>, NdarrowError> {
+    if array.null_count() > 0 {
+        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
+    }
+
     let storage = crate::tensor::variable_shape_tensor_storage(field, array)?;
     let data_values = storage
         .data
@@ -619,6 +623,10 @@ pub fn complex64_variable_shape_tensor_iter<'a>(
     field: &Field,
     array: &'a StructArray,
 ) -> Result<Complex64VariableShapeTensorIter<'a>, NdarrowError> {
+    if array.null_count() > 0 {
+        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
+    }
+
     let storage = crate::tensor::variable_shape_tensor_storage(field, array)?;
     let data_values = storage
         .data

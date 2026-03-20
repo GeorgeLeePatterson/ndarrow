@@ -54,6 +54,103 @@ pub fn cast_f64_to_f32(
     Ok(PrimitiveArray::new(ScalarBuffer::from(values), array.nulls().cloned()))
 }
 
+/// Strategies for replacing nulls in primitive arrays.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub enum NullFill<T> {
+    /// Replace nulls with the additive identity (`0`).
+    Zero,
+    /// Replace nulls with the mean of non-null values.
+    Mean,
+    /// Replace nulls with a caller-provided scalar value.
+    Value(T),
+}
+
+fn filled_values_with<T>(array: &PrimitiveArray<T>, fill_value: T::Native) -> Vec<T::Native>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    let values = array.values().as_ref();
+    let Some(nulls) = array.nulls() else {
+        return values.to_vec();
+    };
+
+    let mut filled = Vec::with_capacity(values.len());
+    for (index, value) in values.iter().copied().enumerate() {
+        filled.push(if nulls.is_null(index) { fill_value } else { value });
+    }
+    filled
+}
+
+fn mean_fill_value<T>(array: &PrimitiveArray<T>) -> Result<T::Native, NdarrowError>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement + num_traits::Float + num_traits::FromPrimitive,
+{
+    let Some(nulls) = array.nulls() else {
+        return Err(NdarrowError::InvalidMetadata {
+            message: "mean fill requires a null bitmap when null_count > 0".to_owned(),
+        });
+    };
+
+    let mut sum = <T::Native as num_traits::Zero>::zero();
+    let mut count = 0_usize;
+    for (index, value) in array.values().iter().copied().enumerate() {
+        if nulls.is_valid(index) {
+            sum = sum + value;
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        return Err(NdarrowError::InvalidMetadata {
+            message: "cannot compute mean of an all-null array".to_owned(),
+        });
+    }
+
+    let denominator =
+        <T::Native as num_traits::FromPrimitive>::from_usize(count).ok_or_else(|| {
+            NdarrowError::TypeMismatch {
+                message: format!("cannot represent count {count} in element type"),
+            }
+        })?;
+    Ok(sum / denominator)
+}
+
+/// Fills nulls in a primitive array with the requested strategy.
+///
+/// # Allocation
+///
+/// Allocates a new values buffer only when nulls are present.
+///
+/// # Does not allocate
+///
+/// Returns a cheap clone when the array has no nulls.
+///
+/// # Errors
+///
+/// Returns an error when `strategy` is [`NullFill::Mean`] and the array is
+/// entirely null.
+pub fn fill_nulls<T>(
+    array: &PrimitiveArray<T>,
+    strategy: NullFill<T::Native>,
+) -> Result<PrimitiveArray<T>, NdarrowError>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement + num_traits::Float + num_traits::FromPrimitive,
+{
+    if array.null_count() == 0 {
+        return Ok(array.clone());
+    }
+
+    match strategy {
+        NullFill::Zero => Ok(fill_nulls_with_zero(array)),
+        NullFill::Mean => fill_nulls_with_mean(array),
+        NullFill::Value(value) => Ok(fill_nulls_with_value(array, value)),
+    }
+}
+
 /// Fills nulls in a primitive array with the additive identity (`0`).
 ///
 /// # Allocation
@@ -69,15 +166,29 @@ where
     T: ArrowPrimitiveType,
     T::Native: NdarrowElement,
 {
+    fill_nulls_with_value(array, <T::Native as num_traits::Zero>::zero())
+}
+
+/// Fills nulls in a primitive array with a caller-provided scalar value.
+///
+/// # Allocation
+///
+/// Allocates a new values buffer only when nulls are present.
+///
+/// # Does not allocate
+///
+/// Returns a cheap clone when the array has no nulls.
+#[must_use]
+pub fn fill_nulls_with_value<T>(array: &PrimitiveArray<T>, value: T::Native) -> PrimitiveArray<T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
     if array.null_count() == 0 {
         return array.clone();
     }
 
-    let values = array
-        .iter()
-        .map(|value| value.unwrap_or_else(<T::Native as num_traits::Zero>::zero))
-        .collect::<Vec<_>>();
-    PrimitiveArray::new(ScalarBuffer::from(values), None)
+    PrimitiveArray::new(ScalarBuffer::from(filled_values_with(array, value)), None)
 }
 
 /// Fills nulls in a primitive array with the mean of non-null values.
@@ -102,29 +213,8 @@ where
         return Ok(array.clone());
     }
 
-    let mut sum = <T::Native as num_traits::Zero>::zero();
-    let mut count = 0_usize;
-    for value in array.iter().flatten() {
-        sum = sum + value;
-        count += 1;
-    }
-
-    if count == 0 {
-        return Err(NdarrowError::InvalidMetadata {
-            message: "cannot compute mean of an all-null array".to_owned(),
-        });
-    }
-
-    let denominator =
-        <T::Native as num_traits::FromPrimitive>::from_usize(count).ok_or_else(|| {
-            NdarrowError::TypeMismatch {
-                message: format!("cannot represent count {count} in element type"),
-            }
-        })?;
-    let mean = sum / denominator;
-
-    let values = array.iter().map(|value| value.unwrap_or(mean)).collect::<Vec<_>>();
-    Ok(PrimitiveArray::new(ScalarBuffer::from(values), None))
+    let mean = mean_fill_value(array)?;
+    Ok(PrimitiveArray::new(ScalarBuffer::from(filled_values_with(array, mean)), None))
 }
 
 /// Compacts a primitive array by removing null positions.
@@ -146,8 +236,18 @@ where
         return array.clone();
     }
 
-    let values = array.iter().flatten().collect::<Vec<_>>();
-    PrimitiveArray::new(ScalarBuffer::from(values), None)
+    let values = array.values().as_ref();
+    let Some(nulls) = array.nulls() else {
+        return array.clone();
+    };
+    let mut compacted = Vec::with_capacity(values.len() - array.null_count());
+    for (index, value) in values.iter().copied().enumerate() {
+        if nulls.is_valid(index) {
+            compacted.push(value);
+        }
+    }
+
+    PrimitiveArray::new(ScalarBuffer::from(compacted), None)
 }
 
 /// Reinterprets a primitive Arrow array as a 2D ndarray view.
@@ -405,6 +505,63 @@ mod tests {
     fn fill_nulls_with_zero_no_nulls_is_passthrough() {
         let input = Float32Array::from(vec![1.0_f32, 2.0, 3.0]);
         let output = fill_nulls_with_zero(&input);
+        assert_eq!(output.null_count(), 0);
+        assert_eq!(output.values().as_ptr(), input.values().as_ptr());
+    }
+
+    #[test]
+    fn fill_nulls_dispatches_zero_strategy() {
+        let input = Float32Array::from(vec![Some(1.0_f32), None, Some(3.0)]);
+        let output = fill_nulls(&input, NullFill::Zero).expect("zero fill should succeed");
+        let expected = [1.0_f32, 0.0, 3.0];
+
+        assert_eq!(output.null_count(), 0);
+        for (actual, expected) in output.values().iter().copied().zip(expected.iter().copied()) {
+            assert_abs_diff_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn fill_nulls_dispatches_value_strategy() {
+        let input = Float64Array::from(vec![Some(1.0_f64), None, Some(-2.5)]);
+        let output =
+            fill_nulls(&input, NullFill::Value(9.0_f64)).expect("value fill should succeed");
+        let expected = [1.0_f64, 9.0, -2.5];
+
+        assert_eq!(output.null_count(), 0);
+        for (actual, expected) in output.values().iter().copied().zip(expected.iter().copied()) {
+            assert_abs_diff_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn fill_nulls_dispatches_mean_strategy() {
+        let input = Float32Array::from(vec![Some(2.0_f32), None, Some(4.0), None]);
+        let output = fill_nulls(&input, NullFill::Mean).expect("mean fill should succeed");
+        let expected = [2.0_f32, 3.0, 4.0, 3.0];
+
+        assert_eq!(output.null_count(), 0);
+        for (actual, expected) in output.values().iter().copied().zip(expected.iter().copied()) {
+            assert_abs_diff_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn fill_nulls_with_value_replaces_nulls() {
+        let input = Float64Array::from(vec![Some(1.0_f64), None, Some(-2.5)]);
+        let output = fill_nulls_with_value(&input, 7.5_f64);
+        let expected = [1.0_f64, 7.5, -2.5];
+
+        assert_eq!(output.null_count(), 0);
+        for (actual, expected) in output.values().iter().copied().zip(expected.iter().copied()) {
+            assert_abs_diff_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn fill_nulls_no_nulls_is_passthrough() {
+        let input = Float64Array::from(vec![1.0_f64, 2.0, 3.0]);
+        let output = fill_nulls(&input, NullFill::Zero).expect("null fill should succeed");
         assert_eq!(output.null_count(), 0);
         assert_eq!(output.values().as_ptr(), input.values().as_ptr());
     }

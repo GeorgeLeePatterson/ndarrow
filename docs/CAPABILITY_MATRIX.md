@@ -17,14 +17,16 @@
 | FixedSizeList<f32> -> ArrayView2    | Done   | Implemented (`validated`/`unchecked`/`masked`) |
 | FixedSizeList<f64> -> ArrayView2    | Done   | Implemented (`validated`/`unchecked`/`masked`) |
 | FixedShapeTensor -> ArrayViewD      | Done   | `fixed_shape_tensor_as_array_viewd`          |
-| VariableShapeTensor -> per-row view | Done   | `variable_shape_tensor_iter` iterator        |
+| VariableShapeTensor -> batch view | Done   | `variable_shape_tensor_batch_view` (`row` / `iter` / `IntoIterator`) |
+| VariableShapeTensor -> per-row view + outer validity | Done | `VariableShapeTensorBatchView::nulls` + `row` / `iter`; `variable_shape_tensor_iter_masked` convenience wrapper |
 | FixedSizeList<complex32> -> ArrayView2 | Done | `complex32_as_array_view2`                   |
 | FixedSizeList<complex64> -> ArrayView2 | Done | `complex64_as_array_view2`                   |
 | FixedShapeTensor<complex32> -> ArrayViewD | Done | `complex32_fixed_shape_tensor_as_array_viewd` |
 | FixedShapeTensor<complex64> -> ArrayViewD | Done | `complex64_fixed_shape_tensor_as_array_viewd` |
 | ndarrow.csr_matrix -> CsrView       | Done   | `csr_view_from_extension`                    |
 | Two-column sparse -> CsrView        | Done   | `csr_view_from_columns` convenience path     |
-| ndarrow.csr_matrix_batch -> per-row CsrView | Done | `csr_matrix_batch_iter` |
+| ndarrow.csr_matrix_batch -> batch view | Done | `csr_matrix_batch_view` (`row` / `iter` / `IntoIterator`) |
+| ndarrow.csr_matrix_batch -> per-row CsrView + outer validity | Done | `CsrMatrixBatchView::nulls` + `row` / `iter`; `csr_matrix_batch_iter_masked` convenience wrapper |
 | VariableShapeTensor<complex32> -> per-row ArrayViewD | Done | `complex32_variable_shape_tensor_iter` |
 | VariableShapeTensor<complex64> -> per-row ArrayViewD | Done | `complex64_variable_shape_tensor_iter` |
 
@@ -54,7 +56,9 @@
 | Validated (null_count check)        | Done   | Default tier, returns Result                 |
 | Unchecked (caller guarantees)       | Done   | Zero-cost, unsafe                            |
 | Masked (view + validity bitmap)     | Done   | Returns tuple, zero allocation; numerical object masks are outer-row only |
+| fill_nulls(strategy)               | Done   | `fill_nulls` + `NullFill` (float strategy dispatch) |
 | fill_nulls(zero)                    | Done   | `helpers::fill_nulls_with_zero`              |
+| fill_nulls(value)                   | Done   | `helpers::fill_nulls_with_value`             |
 | fill_nulls(mean)                    | Done   | `helpers::fill_nulls_with_mean` (float types) |
 | compact_non_null                    | Done   | `helpers::compact_non_null`                  |
 

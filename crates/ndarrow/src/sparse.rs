@@ -9,7 +9,7 @@ use arrow_array::{
     Array, ArrayRef, FixedSizeListArray, Int32Array, ListArray, PrimitiveArray, StructArray,
     UInt32Array, types::ArrowPrimitiveType,
 };
-use arrow_buffer::{OffsetBuffer, ScalarBuffer};
+use arrow_buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
 use arrow_schema::{ArrowError, DataType, Field, extension::ExtensionType};
 use serde::{Deserialize, Serialize};
 
@@ -274,20 +274,182 @@ impl<T> CsrView<'_, T> {
     }
 }
 
-/// Iterator over per-row sparse matrix views for `ndarrow.csr_matrix_batch`.
-pub struct CsrMatrixBatchIter<'a, T>
+/// Column-level zero-copy view over `ndarrow.csr_matrix_batch` storage.
+pub struct CsrMatrixBatchView<'a, T>
 where
     T: ArrowPrimitiveType,
     T::Native: NdarrowElement,
 {
-    index:            usize,
-    len:              usize,
+    nulls:            Option<&'a NullBuffer>,
     shapes:           &'a Int32Array,
     row_ptrs:         &'a ListArray,
     row_ptr_values:   &'a Int32Array,
     col_indices:      &'a ListArray,
     col_index_values: &'a UInt32Array,
     value_values:     &'a PrimitiveArray<T>,
+}
+
+impl<T> Clone for CsrMatrixBatchView<'_, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    fn clone(&self) -> Self {
+        Self {
+            nulls:            self.nulls,
+            shapes:           self.shapes,
+            row_ptrs:         self.row_ptrs,
+            row_ptr_values:   self.row_ptr_values,
+            col_indices:      self.col_indices,
+            col_index_values: self.col_index_values,
+            value_values:     self.value_values,
+        }
+    }
+}
+
+impl<'a, T> CsrMatrixBatchView<'a, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    /// Returns the number of batch rows.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.row_ptrs.len()
+    }
+
+    /// Returns whether the batch is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the optional outer-row validity bitmap.
+    #[must_use]
+    pub fn nulls(&self) -> Option<&'a NullBuffer> {
+        self.nulls
+    }
+
+    /// Returns the packed `[nrows, ncols]` shape buffer for the whole batch.
+    #[must_use]
+    pub fn shape_values(&self) -> &[i32] {
+        self.shapes.values().as_ref()
+    }
+
+    /// Returns the raw Arrow offsets delimiting each row's CSR row-pointer slice.
+    #[must_use]
+    pub fn row_ptr_offsets(&self) -> &[i32] {
+        self.row_ptrs.value_offsets()
+    }
+
+    /// Returns the packed CSR row-pointer values buffer for the whole batch.
+    #[must_use]
+    pub fn row_ptr_values(&self) -> &[i32] {
+        self.row_ptr_values.values().as_ref()
+    }
+
+    /// Returns the raw Arrow offsets delimiting each row's nnz slice.
+    #[must_use]
+    pub fn nnz_offsets(&self) -> &[i32] {
+        self.col_indices.value_offsets()
+    }
+
+    /// Returns the packed column-index values buffer for the whole batch.
+    #[must_use]
+    pub fn col_indices(&self) -> &'a [u32] {
+        self.col_index_values.values().as_ref()
+    }
+
+    /// Returns the packed numerical values buffer for the whole batch.
+    #[must_use]
+    pub fn values(&self) -> &'a [T::Native] {
+        self.value_values.values().as_ref()
+    }
+
+    /// Returns a validated CSR row view at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `index` is out of bounds or the row metadata is
+    /// structurally invalid.
+    pub fn row(&self, index: usize) -> Result<CsrView<'a, T::Native>, NdarrowError> {
+        if index >= self.len() {
+            return Err(NdarrowError::ShapeMismatch {
+                message: format!(
+                    "row index {index} out of bounds for batch of length {}",
+                    self.len()
+                ),
+            });
+        }
+
+        let Some(shape_start) = index.checked_mul(2) else {
+            return Err(NdarrowError::ShapeMismatch {
+                message: format!("shape index overflow at row {index}"),
+            });
+        };
+        let raw_nrows = self.shapes.value(shape_start);
+        let raw_ncols = self.shapes.value(shape_start + 1);
+        let nrows = usize::try_from(raw_nrows).map_err(|_| NdarrowError::ShapeMismatch {
+            message: format!("negative sparse matrix row count at row {index}: {raw_nrows}"),
+        })?;
+        let ncols = usize::try_from(raw_ncols).map_err(|_| NdarrowError::ShapeMismatch {
+            message: format!("negative sparse matrix column count at row {index}: {raw_ncols}"),
+        })?;
+
+        let row_ptr_start = offset_to_usize(
+            self.row_ptrs.value_offsets()[index],
+            &format!("row_ptrs offset at row {index}"),
+        )?;
+        let row_ptr_end = offset_to_usize(
+            self.row_ptrs.value_offsets()[index + 1],
+            &format!("row_ptrs end offset at row {index}"),
+        )?;
+        let nnz_start = offset_to_usize(
+            self.col_indices.value_offsets()[index],
+            &format!("nnz offset at row {index}"),
+        )?;
+        let nnz_end = offset_to_usize(
+            self.col_indices.value_offsets()[index + 1],
+            &format!("nnz end offset at row {index}"),
+        )?;
+
+        let row_ptrs = &self.row_ptr_values.values().as_ref()[row_ptr_start..row_ptr_end];
+        let col_indices = &self.col_index_values.values().as_ref()[nnz_start..nnz_end];
+        let values = &self.value_values.values().as_ref()[nnz_start..nnz_end];
+
+        validate_csr_batch_row(index, nrows, row_ptrs, col_indices.len(), values.len())?;
+
+        Ok(CsrView { nrows, ncols, row_ptrs, col_indices, values })
+    }
+
+    /// Returns the per-row iterator convenience view for this batch.
+    #[must_use]
+    pub fn iter(&self) -> CsrMatrixBatchIter<'a, T> {
+        CsrMatrixBatchIter { batch: (*self).clone(), index: 0 }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a CsrMatrixBatchView<'a, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    type IntoIter = CsrMatrixBatchIter<'a, T>;
+    type Item = Result<(usize, CsrView<'a, T::Native>), NdarrowError>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// Iterator over per-row sparse matrix views for `ndarrow.csr_matrix_batch`.
+pub struct CsrMatrixBatchIter<'a, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    batch: CsrMatrixBatchView<'a, T>,
+    index: usize,
 }
 
 struct PackedCsrBatch<T> {
@@ -307,82 +469,13 @@ where
     type Item = Result<(usize, CsrView<'a, T::Native>), NdarrowError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.len {
+        if self.index >= self.batch.len() {
             return None;
         }
 
         let row = self.index;
         self.index += 1;
-
-        let Some(shape_start) = row.checked_mul(2) else {
-            return Some(Err(NdarrowError::ShapeMismatch {
-                message: format!("shape index overflow at row {row}"),
-            }));
-        };
-        let raw_nrows = self.shapes.value(shape_start);
-        let raw_ncols = self.shapes.value(shape_start + 1);
-        let Ok(nrows) = usize::try_from(raw_nrows) else {
-            return Some(Err(NdarrowError::ShapeMismatch {
-                message: format!("negative sparse matrix row count at row {row}: {raw_nrows}"),
-            }));
-        };
-        let Ok(ncols) = usize::try_from(raw_ncols) else {
-            return Some(Err(NdarrowError::ShapeMismatch {
-                message: format!("negative sparse matrix column count at row {row}: {raw_ncols}"),
-            }));
-        };
-
-        let row_ptr_offsets = self.row_ptrs.value_offsets();
-        let Ok(row_ptr_start) = usize::try_from(row_ptr_offsets[row]) else {
-            return Some(Err(NdarrowError::InvalidMetadata {
-                message: format!("negative row_ptrs offset at row {row}: {}", row_ptr_offsets[row]),
-            }));
-        };
-        let Ok(row_ptr_end) = usize::try_from(row_ptr_offsets[row + 1]) else {
-            return Some(Err(NdarrowError::InvalidMetadata {
-                message: format!(
-                    "negative row_ptrs end offset at row {row}: {}",
-                    row_ptr_offsets[row + 1]
-                ),
-            }));
-        };
-
-        let nnz_offsets = self.col_indices.value_offsets();
-        let Ok(nnz_start) = usize::try_from(nnz_offsets[row]) else {
-            return Some(Err(NdarrowError::InvalidMetadata {
-                message: format!("negative nnz offset at row {row}: {}", nnz_offsets[row]),
-            }));
-        };
-        let Ok(nnz_end) = usize::try_from(nnz_offsets[row + 1]) else {
-            return Some(Err(NdarrowError::InvalidMetadata {
-                message: format!("negative nnz end offset at row {row}: {}", nnz_offsets[row + 1]),
-            }));
-        };
-
-        let row_ptr_slice = &self.row_ptr_values.values().as_ref()[row_ptr_start..row_ptr_end];
-        let col_indices_slice = &self.col_index_values.values().as_ref()[nnz_start..nnz_end];
-        let value_slice = &self.value_values.values().as_ref()[nnz_start..nnz_end];
-
-        if let Err(err) = validate_csr_batch_row(
-            row,
-            nrows,
-            row_ptr_slice,
-            col_indices_slice.len(),
-            value_slice.len(),
-        ) {
-            return Some(Err(err));
-        }
-
-        Some(Ok((
-            row,
-            CsrView {
-                nrows,
-                ncols,
-                row_ptrs: row_ptr_slice,
-                col_indices: col_indices_slice,
-                values: value_slice,
-            },
-        )))
+        Some(self.batch.row(row).map(|view| (row, view)))
     }
 }
 
@@ -661,28 +754,24 @@ fn validate_csr_batch_row(
     Ok(())
 }
 
-/// Creates an iterator over per-row zero-copy sparse matrix views for
-/// `ndarrow.csr_matrix_batch`.
+/// Builds a column-level view over `ndarrow.csr_matrix_batch` storage.
 ///
 /// # Does not allocate
 ///
-/// This borrows Arrow offsets and value buffers directly.
+/// This borrows Arrow child arrays, offsets, and value buffers directly.
 ///
 /// # Errors
 ///
-/// Returns an error when extension/type/null invariants are violated.
-pub fn csr_matrix_batch_iter<'a, T>(
+/// Returns an error when extension/type invariants are violated or when child
+/// storage arrays carry nulls.
+pub fn csr_matrix_batch_view<'a, T>(
     field: &Field,
     array: &'a StructArray,
-) -> Result<CsrMatrixBatchIter<'a, T>, NdarrowError>
+) -> Result<CsrMatrixBatchView<'a, T>, NdarrowError>
 where
     T: ArrowPrimitiveType,
     T::Native: NdarrowElement,
 {
-    if array.null_count() > 0 {
-        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
-    }
-
     let extension =
         field.try_extension_type::<CsrMatrixBatchExtension>().map_err(NdarrowError::from)?;
     extension.supports_data_type(array.data_type()).map_err(NdarrowError::from)?;
@@ -738,9 +827,8 @@ where
         return Err(NdarrowError::NullsPresent { null_count: value_values.null_count() });
     }
 
-    Ok(CsrMatrixBatchIter {
-        index: 0,
-        len: array.len(),
+    Ok(CsrMatrixBatchView {
+        nulls: array.nulls(),
         shapes: shape_values,
         row_ptrs,
         row_ptr_values,
@@ -748,6 +836,62 @@ where
         col_index_values,
         value_values,
     })
+}
+
+/// Creates an iterator over per-row zero-copy sparse matrix views for
+/// `ndarrow.csr_matrix_batch` together with the outer validity buffer.
+///
+/// # Does not allocate
+///
+/// This borrows Arrow offsets and value buffers directly.
+///
+/// # Errors
+///
+/// Returns an error when extension/type invariants are violated or when child
+/// storage arrays carry nulls.
+///
+/// # Semantics
+///
+/// When the returned validity buffer marks a row as null, the iterator still
+/// yields a physical CSR view for that position. Callers must consult the
+/// validity buffer before interpreting a row.
+pub fn csr_matrix_batch_iter_masked<'a, T>(
+    field: &Field,
+    array: &'a StructArray,
+) -> Result<(CsrMatrixBatchIter<'a, T>, Option<&'a NullBuffer>), NdarrowError>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    let batch = csr_matrix_batch_view(field, array)?;
+    let nulls = batch.nulls();
+    Ok((batch.iter(), nulls))
+}
+
+/// Creates an iterator over per-row zero-copy sparse matrix views for
+/// `ndarrow.csr_matrix_batch`.
+///
+/// # Does not allocate
+///
+/// This borrows Arrow offsets and value buffers directly.
+///
+/// # Errors
+///
+/// Returns an error when extension/type/null invariants are violated.
+pub fn csr_matrix_batch_iter<'a, T>(
+    field: &Field,
+    array: &'a StructArray,
+) -> Result<CsrMatrixBatchIter<'a, T>, NdarrowError>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    if array.null_count() > 0 {
+        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
+    }
+
+    let (iter, _nulls) = csr_matrix_batch_iter_masked(field, array)?;
+    Ok(iter)
 }
 
 /// Builds an Arrow `StructArray` plus extension field for `ndarrow.csr_matrix`.
@@ -1644,6 +1788,75 @@ mod tests {
         assert!(result.is_err(), "outer nulls must fail");
         let err = result.err().expect("outer nulls must fail");
         assert!(matches!(err, NdarrowError::NullsPresent { .. }));
+    }
+
+    #[test]
+    fn csr_matrix_batch_view_exposes_columnar_buffers() {
+        let shapes = vec![[1_usize, 2_usize], [2_usize, 3_usize]];
+        let row_ptrs = vec![vec![0_i32, 1_i32], vec![0_i32, 1_i32, 2_i32]];
+        let col_indices = vec![vec![0_u32], vec![1_u32, 2_u32]];
+        let values = vec![vec![1.0_f64], vec![3.0_f64, 4.0_f64]];
+        let (field, array) =
+            csr_batch_to_extension_array("sparse_batch", shapes, row_ptrs, col_indices, values)
+                .unwrap();
+
+        let with_nulls = StructArray::new(
+            array.fields().clone(),
+            array.columns().to_vec(),
+            Some(NullBuffer::from(vec![true, false])),
+        );
+
+        let batch = csr_matrix_batch_view::<Float64Type>(&field, &with_nulls).unwrap();
+        let nulls = batch.nulls().expect("outer null buffer");
+        let row = batch.row(1).unwrap();
+
+        assert_eq!(batch.len(), 2);
+        assert!(!batch.is_empty());
+        assert_eq!(batch.shape_values(), &[1, 2, 2, 3]);
+        assert_eq!(batch.row_ptr_offsets(), &[0, 2, 5]);
+        assert_eq!(batch.row_ptr_values(), &[0, 1, 0, 1, 2]);
+        assert_eq!(batch.nnz_offsets(), &[0, 1, 3]);
+        assert_eq!(batch.col_indices(), &[0, 1, 2]);
+        assert_eq!(batch.values(), &[1.0_f64, 3.0, 4.0]);
+        assert!(nulls.is_valid(0));
+        assert!(nulls.is_null(1));
+        assert_eq!(row.nrows, 2);
+        assert_eq!(row.ncols, 3);
+        assert_eq!(row.row_ptrs, &[0, 1, 2]);
+        assert_eq!(row.col_indices, &[1, 2]);
+        assert_eq!(row.values, &[3.0_f64, 4.0]);
+    }
+
+    #[test]
+    fn csr_matrix_batch_iter_masked_preserves_outer_nulls() {
+        let shapes = vec![[1_usize, 2_usize], [1_usize, 3_usize]];
+        let row_ptrs = vec![vec![0_i32, 1_i32], vec![0_i32, 1_i32]];
+        let col_indices = vec![vec![0_u32], vec![2_u32]];
+        let values = vec![vec![1.0_f64], vec![3.5_f64]];
+        let (field, array) =
+            csr_batch_to_extension_array("sparse_batch", shapes, row_ptrs, col_indices, values)
+                .unwrap();
+
+        let with_nulls = StructArray::new(
+            array.fields().clone(),
+            array.columns().to_vec(),
+            Some(NullBuffer::from(vec![true, false])),
+        );
+
+        let (iter, nulls) =
+            csr_matrix_batch_iter_masked::<Float64Type>(&field, &with_nulls).unwrap();
+        let rows = iter.collect::<Result<Vec<_>, _>>().unwrap();
+        let nulls = nulls.expect("outer null buffer");
+
+        assert_eq!(rows.len(), 2);
+        assert!(nulls.is_valid(0));
+        assert!(nulls.is_null(1));
+        assert_eq!(rows[0].0, 0);
+        assert_eq!(rows[0].1.nrows, 1);
+        assert_eq!(rows[0].1.ncols, 2);
+        assert_eq!(rows[0].1.col_indices, &[0]);
+        assert_eq!(rows[0].1.values, &[1.0]);
+        assert_eq!(rows[1].0, 1);
     }
 
     #[test]

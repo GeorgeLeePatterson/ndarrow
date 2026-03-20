@@ -1,6 +1,6 @@
 # Execution Tracker
 
-Last updated: 2026-03-12
+Last updated: 2026-03-20
 
 ## Purpose
 
@@ -53,6 +53,9 @@ Operational state tracker for ndarrow implementation progress.
 | I-032 | `ndarrow.csr_matrix_batch` implemented with per-row `CsrView` ingress, outbound construction, registry wiring, and tests | 5 |
 | I-033 | Complex `arrow.variable_shape_tensor` inbound/outbound carriers implemented by composing `ndarrow.complex32` / `ndarrow.complex64` inside canonical ragged tensor storage | 7 |
 | I-034 | Checkpoint 1 fully closed: the concept-family standalone / `rows-of-X` bridge matrix is implemented and release-ready | 10 |
+| I-035 | Masked per-row ingress added for canonical ragged tensor and batched CSR carriers (`variable_shape_tensor_iter_masked`, `csr_matrix_batch_iter_masked`) with tests and public re-exports | 4 |
+| I-036 | Null helper family widened with `NullFill`, `fill_nulls`, and `fill_nulls_with_value`, and primitive fill paths now operate directly on raw buffers + validity bitmaps | 8 |
+| I-037 | Column-level batch views added for canonical ragged tensor and batched CSR carriers (`VariableShapeTensorBatchView`, `CsrMatrixBatchView`) with `row` / `iter` / `IntoIterator` ergonomics and zero-copy tests | 4 |
 
 ## Next (Priority Order)
 

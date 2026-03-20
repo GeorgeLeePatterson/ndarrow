@@ -1,6 +1,6 @@
 # Status — Current Snapshot
 
-Last updated: 2026-03-12
+Last updated: 2026-03-20
 
 ## Summary
 
@@ -8,9 +8,11 @@ ndarrow is now release-ready for the downstream-driven checkpoint 1 hardening ro
 Core traits, error model, dense/sparse/tensor/complex conversions, explicit null handling tiers,
 helper APIs, extension registry, prelude exports, CI, and release automation are implemented.
 The numerical-object null contract has now been tightened for `FixedSizeList -> ArrayView2`
-masked ingress, higher-rank complex matrix/fixed-shape tensor carriers are first-class, batched
-sparse matrices now have an explicit `ndarrow.csr_matrix_batch` carrier, and ragged complex
-tensors now compose through canonical `arrow.variable_shape_tensor<ndarrow.complex*>`.
+masked ingress, ragged tensor and batched sparse carriers now also expose masked outer-row
+validity plus first-class column-level batch views, higher-rank complex matrix/fixed-shape tensor
+carriers are first-class, batched sparse matrices now have an explicit `ndarrow.csr_matrix_batch`
+carrier, and ragged complex tensors now compose through canonical
+`arrow.variable_shape_tensor<ndarrow.complex*>`.
 The downstream checkpoint framing is now satisfied: checkpoint 1 is closed and `ndarrow` is ready
 for the next release under the concept-first standalone / `rows-of-X` bridge model.
 
@@ -24,7 +26,7 @@ for the next release under the concept-first standalone / `rows-of-X` bridge mod
 | Dependencies          | Added and pinned at workspace level. |
 | Tests                 | Unit + integration tests for dense, sparse, tensor, null semantics, and zero-copy behavior. |
 | CI                    | Implemented (`fmt`, `clippy`, feature checks, unit/integration tests, coverage, bench smoke). |
-| Coverage              | Gate configured at 90% line coverage and currently passing (`90.83%` on the latest full `just checks`). |
+| Coverage              | Gate configured at 90% line coverage and currently passing (`90.73%` on the latest full `just checks`). |
 
 ## Implemented Capability Baseline
 
@@ -35,7 +37,7 @@ for the next release under the concept-first standalone / `rows-of-X` bridge mod
 5. `IntoArrow` for `Array1<T>` and `Array2<T>`.
 6. Sparse bridge APIs (`CsrMatrixExtension`, `CsrView`, inbound/outbound CSR paths).
 7. Tensor bridge APIs for `arrow.fixed_shape_tensor` and `arrow.variable_shape_tensor`.
-8. Explicit null helpers (`fill_nulls_with_zero`, `fill_nulls_with_mean`, `compact_non_null`).
+8. Explicit null helpers (`fill_nulls`, `fill_nulls_with_zero`, `fill_nulls_with_value`, `fill_nulls_with_mean`, `compact_non_null`).
 9. Explicit helpers (`cast_f32_to_f64`, `cast_f64_to_f32`, reshape helpers, layout normalization).
 10. Explicit sparse densification helper (`densify_csr_view`) with CSR invariant validation.
 11. Extension registry APIs (`registered_extension_names`, `deserialize_registered_extension`) and prelude re-exports.
@@ -45,7 +47,8 @@ for the next release under the concept-first standalone / `rows-of-X` bridge mod
 15. Benchmark harness with smoke-compatible public API conversion benchmarks plus baseline regression reporting/check gates.
 16. Batched sparse matrix bridge APIs (`ndarrow.csr_matrix_batch`, per-row iterator, outbound constructor).
 17. Complex ragged tensor bridge APIs over canonical `arrow.variable_shape_tensor`.
-18. Full quality gate currently passing (`just checks`, including `90.83%` line coverage).
+18. Masked inbound APIs plus column-level batch views for `arrow.variable_shape_tensor` and `ndarrow.csr_matrix_batch`.
+19. Full quality gate currently passing (`just checks`, including `90.73%` line coverage).
 
 ## Dependencies on Upstream Changes
 

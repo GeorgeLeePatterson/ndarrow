@@ -54,7 +54,8 @@ let arrow_result = result.into_arrow()?;  // PrimitiveArray<Float64>, no allocat
 | `PrimitiveArray<T>` | `ArrayView1<T>` | Arrow -> ndarray | Zero-copy |
 | `FixedSizeList<T>(D)` | `ArrayView2<T>` (M, D) | Arrow -> ndarray | Zero-copy |
 | `arrow.fixed_shape_tensor` | `ArrayViewD<T>` | Arrow -> ndarray | Zero-copy |
-| `arrow.variable_shape_tensor` | Per-row `ArrayViewD<T>` | Arrow -> ndarray | Zero-copy |
+| `arrow.variable_shape_tensor` | `VariableShapeTensorBatchView<T>` (`row() -> ArrayViewD<T>`) | Arrow -> ndarray | Zero-copy |
+| `ndarrow.csr_matrix_batch` | `CsrMatrixBatchView<T>` (`row() -> CsrView<T>`) | Arrow -> ndarray | Zero-copy |
 | `FixedSizeList<ndarrow.complex32>(D)` | `ArrayView2<Complex32>` | Arrow -> ndarray | Zero-copy |
 | `FixedSizeList<ndarrow.complex64>(D)` | `ArrayView2<Complex64>` | Arrow -> ndarray | Zero-copy |
 | `arrow.fixed_shape_tensor<ndarrow.complex32>` | `ArrayViewD<Complex32>` | Arrow -> ndarray | Zero-copy |
@@ -92,7 +93,10 @@ let (view, mask) = array.as_ndarray_masked();
 
 For numerical object payloads such as `FixedSizeList<T>(D) -> ArrayView2<T>`, the masked path is
 row-oriented: it may return an outer row-validity bitmap, but actual inner component nulls are
-still rejected on validated and masked ingress.
+still rejected on validated and masked ingress. Ragged tensor and batched CSR carriers now expose
+column-level batch views through `variable_shape_tensor_batch_view` and `csr_matrix_batch_view`;
+those views preserve the outer validity bitmap and provide `row()` / `iter()` accessors, while
+`variable_shape_tensor_iter_masked` and `csr_matrix_batch_iter_masked` remain convenience wrappers.
 
 ## Extension Types
 

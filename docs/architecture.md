@@ -44,7 +44,7 @@ Checkpoint 1 is now closed under the concept-family carrier rule:
 
 1. `rows-of-sparse-matrices` are represented by `ndarrow.csr_matrix_batch`
 2. complex ragged tensors use canonical `arrow.variable_shape_tensor<ndarrow.complex*>`
-3. each admitted family now has an explicit standalone and/or `rows-of-X` bridge contract
+3. each admitted family now has an explicit standalone and/or `rows-of-X` bridge contract, including column-level batch views for ragged tensor and batched sparse carriers
 4. the new carriers meet the same bar as the rest of the bridge surface:
    - zero-copy ingress where structurally possible
    - explicit outbound constructors
@@ -102,7 +102,7 @@ Implemented for:
 - `PrimitiveArray<T>` where `T::Native: NdarrowElement` -> `ArrayView1<T::Native>`
 - `FixedSizeListArray` (with inner `PrimitiveArray<T>`) -> `ArrayView2<T::Native>`
 - `FixedShapeTensor` arrays -> `ArrayViewD<T::Native>`
-- `VariableShapeTensor` arrays -> per-row `ArrayViewD<T::Native>` (via iterator)
+- `VariableShapeTensor` arrays -> `VariableShapeTensorBatchView<T>` with `row()` / `iter()` access to per-row `ArrayViewD<T::Native>`
 
 For numerical object encodings such as `FixedSizeList<T>(D)`, the masked path only carries outer
 row validity. Inner component nulls are rejected because they cannot be represented faithfully by
@@ -135,9 +135,9 @@ Implemented for:
 | `PrimitiveArray<T>`                 | `ArrayView1<T::Native>`   | Zero  | Borrow values slice          |
 | `FixedSizeList<T>(D)`              | `ArrayView2<T::Native>`   | Zero  | Borrow flat buffer + reshape |
 | `arrow.fixed_shape_tensor`          | `ArrayViewD<T::Native>`   | Zero  | Borrow flat buffer + shape   |
-| `arrow.variable_shape_tensor`       | Per-row `ArrayViewD`      | Zero  | Borrow slice per element     |
+| `arrow.variable_shape_tensor`       | `VariableShapeTensorBatchView` | Zero  | Borrow offsets/shapes/values once; row access is O(1) |
 | `ndarrow.csr_matrix`                 | `CsrView` / equivalent   | Zero  | Borrow offsets + indices + values |
-| `ndarrow.csr_matrix_batch`          | Per-row `CsrView`        | Zero  | Borrow nested offsets + values per row |
+| `ndarrow.csr_matrix_batch`          | `CsrMatrixBatchView`     | Zero  | Borrow nested offsets/values once; row access is O(1) |
 | `ndarrow.complex32`                 | `ArrayView1<Complex32>`   | Zero  | Borrow pair buffer + reinterpret |
 | `ndarrow.complex64`                 | `ArrayView1<Complex64>`   | Zero  | Borrow pair buffer + reinterpret |
 | `FixedSizeList<ndarrow.complex*>(D)` | `ArrayView2<Complex*>`   | Zero  | Borrow nested pair buffer + reshape |

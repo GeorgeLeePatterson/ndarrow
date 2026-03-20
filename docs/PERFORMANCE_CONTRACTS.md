@@ -15,6 +15,7 @@ This includes:
 - All `AsNdarray::as_ndarray_masked` implementations
 - All `IntoArrow::into_arrow` implementations on standard-layout arrays
 - All `CsrView` construction from Arrow buffers
+- All batch-view constructors for ragged tensor and batched CSR carriers
 - All `reshape` operations (pointer + shape, no data movement)
 
 ### Rule 2: Allocating Functions Are Named and Documented
@@ -43,9 +44,11 @@ These are documented at the function level and at the type level.
 | PrimitiveArray -> ArrayView1     | Borrow values slice                    | O(1)       |
 | FixedSizeList -> ArrayView2      | Borrow flat buffer, compute shape      | O(1)       |
 | FixedShapeTensor -> ArrayViewD   | Borrow flat buffer, parse shape meta   | O(1)       |
-| VarShapeTensor -> per-row view   | Borrow data slice at offset            | O(1)/row   |
+| VarShapeTensor -> batch view     | Borrow offsets + packed shapes + values | O(1)       |
+| VarShapeTensor batch row -> view | Borrow data slice at offset            | O(1)/row   |
 | CSR ext type -> CsrView         | Borrow offsets + indices + values      | O(1)       |
-| CSR batch ext -> per-row CsrView | Borrow nested offsets + indices + values | O(1)/row |
+| CSR batch ext -> batch view     | Borrow nested offsets + indices + values | O(1)     |
+| CSR batch row -> CsrView        | Slice borrowed nested buffers          | O(1)/row   |
 | complex32 ext -> ArrayView1     | Borrow pair buffer, reinterpret as Complex32 | O(1) |
 | complex64 ext -> ArrayView1     | Borrow pair buffer, reinterpret as Complex64 | O(1) |
 | FixedSizeList<complex32> -> ArrayView2 | Borrow nested pair buffer + reshape | O(1) |

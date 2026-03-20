@@ -4,13 +4,13 @@
 //! - `arrow.fixed_shape_tensor`
 //! - `arrow.variable_shape_tensor`
 
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use arrow_array::{
     Array, ArrayRef, FixedSizeListArray, Int32Array, ListArray, PrimitiveArray, StructArray,
     types::ArrowPrimitiveType,
 };
-use arrow_buffer::{OffsetBuffer, ScalarBuffer};
+use arrow_buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
 use arrow_schema::{
     ArrowError, DataType, Field,
     extension::{
@@ -221,6 +221,75 @@ pub(crate) struct VariableShapeTensorRowCursor<'a> {
     uniform_shape: Option<Vec<Option<i32>>>,
 }
 
+fn tensor_offset_to_usize(offset: i32, row: usize, context: &str) -> Result<usize, NdarrowError> {
+    usize::try_from(offset).map_err(|_| NdarrowError::InvalidMetadata {
+        message: format!("negative {context} at row {row}: {offset}"),
+    })
+}
+
+fn decode_variable_shape_tensor_row(
+    row: usize,
+    data_offsets: &[i32],
+    shape_values: &[i32],
+    dimensions: usize,
+    uniform_shape: Option<&[Option<i32>]>,
+) -> Result<VariableShapeTensorRow, NdarrowError> {
+    let start = tensor_offset_to_usize(data_offsets[row], row, "data offset")?;
+    let end = tensor_offset_to_usize(data_offsets[row + 1], row, "data end offset")?;
+
+    let shape_start = row.checked_mul(dimensions).ok_or_else(|| NdarrowError::ShapeMismatch {
+        message: format!("shape index overflow at row {row}"),
+    })?;
+    let shape_end = shape_start.checked_add(dimensions).ok_or_else(|| {
+        NdarrowError::ShapeMismatch { message: format!("shape range overflow at row {row}") }
+    })?;
+
+    let mut shape = Vec::with_capacity(dimensions);
+    for (dim_idx, raw) in shape_values[shape_start..shape_end].iter().copied().enumerate() {
+        let dim = usize::try_from(raw).map_err(|_| NdarrowError::ShapeMismatch {
+            message: format!("negative tensor dimension at row {row}, dim {dim_idx}: {raw}"),
+        })?;
+
+        if let Some(uniform_shape) = uniform_shape
+            && let Some(expected) = uniform_shape[dim_idx]
+        {
+            let expected =
+                usize::try_from(expected).map_err(|_| NdarrowError::InvalidMetadata {
+                    message: format!(
+                        "uniform_shape contains negative dimension at index {dim_idx}: {expected}"
+                    ),
+                })?;
+            if dim != expected {
+                return Err(NdarrowError::ShapeMismatch {
+                    message: format!(
+                        "row {row} dimension {dim_idx} violates uniform_shape: expected {expected}, found {dim}"
+                    ),
+                });
+            }
+        }
+
+        shape.push(dim);
+    }
+
+    let required_len = shape
+        .iter()
+        .try_fold(1_usize, |acc, dim| acc.checked_mul(*dim))
+        .ok_or_else(|| NdarrowError::ShapeMismatch {
+            message: format!("row {row} shape product overflows usize: {shape:?}"),
+        })?;
+
+    if required_len != (end - start) {
+        return Err(NdarrowError::ShapeMismatch {
+            message: format!(
+                "row {row} shape product ({required_len}) does not match data length ({})",
+                end - start
+            ),
+        });
+    }
+
+    Ok(VariableShapeTensorRow { row, start, end, shape })
+}
+
 impl VariableShapeTensorRowCursor<'_> {
     pub(crate) fn next_row(&mut self) -> Option<Result<VariableShapeTensorRow, NdarrowError>> {
         if self.index >= self.len {
@@ -230,71 +299,13 @@ impl VariableShapeTensorRowCursor<'_> {
         let row = self.index;
         self.index += 1;
 
-        let offsets = self.data.value_offsets();
-        let start = usize::try_from(offsets[row]).expect("Arrow list offsets must be non-negative");
-        let end =
-            usize::try_from(offsets[row + 1]).expect("Arrow list offsets must be non-negative");
-
-        let shape_start = row * self.dimensions;
-        let shape_end = shape_start + self.dimensions;
-
-        let mut shape = Vec::with_capacity(self.dimensions);
-        for (dim_idx, raw) in
-            self.shape_values.values().as_ref()[shape_start..shape_end].iter().copied().enumerate()
-        {
-            let dim = usize::try_from(raw).map_err(|_| NdarrowError::ShapeMismatch {
-                message: format!("negative tensor dimension at row {row}, dim {dim_idx}: {raw}"),
-            });
-            let dim = match dim {
-                Ok(dim) => dim,
-                Err(err) => return Some(Err(err)),
-            };
-
-            if let Some(uniform_shape) = &self.uniform_shape {
-                if let Some(expected) = uniform_shape[dim_idx] {
-                    let expected = usize::try_from(expected).map_err(|_| NdarrowError::InvalidMetadata {
-                        message: format!(
-                            "uniform_shape contains negative dimension at index {dim_idx}: {expected}"
-                        ),
-                    });
-                    let expected = match expected {
-                        Ok(expected) => expected,
-                        Err(err) => return Some(Err(err)),
-                    };
-                    if dim != expected {
-                        return Some(Err(NdarrowError::ShapeMismatch {
-                            message: format!(
-                                "row {row} dimension {dim_idx} violates uniform_shape: expected {expected}, found {dim}"
-                            ),
-                        }));
-                    }
-                }
-            }
-
-            shape.push(dim);
-        }
-
-        let required_len = shape
-            .iter()
-            .try_fold(1_usize, |acc, dim| acc.checked_mul(*dim))
-            .ok_or_else(|| NdarrowError::ShapeMismatch {
-                message: format!("row {row} shape product overflows usize: {shape:?}"),
-            });
-        let required_len = match required_len {
-            Ok(required_len) => required_len,
-            Err(err) => return Some(Err(err)),
-        };
-
-        if required_len != (end - start) {
-            return Some(Err(NdarrowError::ShapeMismatch {
-                message: format!(
-                    "row {row} shape product ({required_len}) does not match data length ({})",
-                    end - start
-                ),
-            }));
-        }
-
-        Some(Ok(VariableShapeTensorRow { row, start, end, shape }))
+        Some(decode_variable_shape_tensor_row(
+            row,
+            self.data.value_offsets(),
+            self.shape_values.values().as_ref(),
+            self.dimensions,
+            self.uniform_shape.as_deref(),
+        ))
     }
 }
 
@@ -302,10 +313,6 @@ pub(crate) fn variable_shape_tensor_storage<'a>(
     field: &Field,
     array: &'a StructArray,
 ) -> Result<VariableShapeTensorStorage<'a>, NdarrowError> {
-    if array.null_count() > 0 {
-        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
-    }
-
     let extension = parse_variable_shape_extension(field)?;
     extension.supports_data_type(array.data_type()).map_err(NdarrowError::from)?;
 
@@ -346,6 +353,233 @@ pub(crate) fn variable_shape_tensor_storage<'a>(
         shape_values,
         dimensions: extension.dimensions(),
         uniform_shape: extension.uniform_shapes().map(<[Option<i32>]>::to_vec),
+    })
+}
+
+/// Row-level zero-copy view into a single `arrow.variable_shape_tensor` batch entry.
+pub struct VariableShapeTensorRowView<'a, T> {
+    row:    usize,
+    values: &'a [T],
+    shape:  Vec<usize>,
+}
+
+impl<'a, T> VariableShapeTensorRowView<'a, T> {
+    /// Returns the batch row index.
+    #[must_use]
+    pub fn row(&self) -> usize {
+        self.row
+    }
+
+    /// Returns the validated row shape.
+    #[must_use]
+    pub fn shape(&self) -> &[usize] {
+        &self.shape
+    }
+
+    /// Returns the packed row values slice.
+    #[must_use]
+    pub fn values(&self) -> &'a [T] {
+        self.values
+    }
+}
+
+impl<'a, T> VariableShapeTensorRowView<'a, T>
+where
+    T: NdarrowElement,
+{
+    /// Materializes the row as an `ArrayViewD` over the borrowed values slice.
+    ///
+    /// # Does not allocate
+    ///
+    /// This borrows the existing values slice. ndarray may still clone the
+    /// small dynamic shape descriptor internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if ndarray rejects the already-validated shape.
+    pub fn as_array_viewd(&self) -> Result<ArrayViewD<'a, T>, NdarrowError> {
+        ArrayViewD::from_shape(IxDyn(&self.shape), self.values).map_err(NdarrowError::from)
+    }
+}
+
+/// Column-level zero-copy view over `arrow.variable_shape_tensor` storage.
+pub struct VariableShapeTensorBatchView<'a, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    nulls:         Option<&'a NullBuffer>,
+    data:          &'a ListArray,
+    data_values:   &'a PrimitiveArray<T>,
+    shape_values:  &'a Int32Array,
+    dimensions:    usize,
+    uniform_shape: Option<Vec<Option<i32>>>,
+}
+
+impl<T> Clone for VariableShapeTensorBatchView<'_, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    fn clone(&self) -> Self {
+        Self {
+            nulls:         self.nulls,
+            data:          self.data,
+            data_values:   self.data_values,
+            shape_values:  self.shape_values,
+            dimensions:    self.dimensions,
+            uniform_shape: self.uniform_shape.clone(),
+        }
+    }
+}
+
+impl<'a, T> VariableShapeTensorBatchView<'a, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    /// Returns the number of batch rows.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Returns whether the batch is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the optional outer-row validity bitmap.
+    #[must_use]
+    pub fn nulls(&self) -> Option<&'a NullBuffer> {
+        self.nulls
+    }
+
+    /// Returns the tensor rank encoded for each row.
+    #[must_use]
+    pub fn dimensions(&self) -> usize {
+        self.dimensions
+    }
+
+    /// Returns the optional uniform-shape metadata.
+    #[must_use]
+    pub fn uniform_shape(&self) -> Option<&[Option<i32>]> {
+        self.uniform_shape.as_deref()
+    }
+
+    /// Returns the raw Arrow list offsets for packed row data.
+    #[must_use]
+    pub fn data_offsets(&self) -> &[i32] {
+        self.data.value_offsets()
+    }
+
+    /// Returns the packed primitive values buffer for the whole batch.
+    #[must_use]
+    pub fn values(&self) -> &'a [T::Native] {
+        self.data_values.values().as_ref()
+    }
+
+    /// Returns the packed shape buffer for the whole batch.
+    #[must_use]
+    pub fn shape_values(&self) -> &[i32] {
+        self.shape_values.values().as_ref()
+    }
+
+    /// Returns a validated row view at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `index` is out of bounds or the row metadata is
+    /// structurally invalid.
+    pub fn row(
+        &self,
+        index: usize,
+    ) -> Result<VariableShapeTensorRowView<'a, T::Native>, NdarrowError> {
+        if index >= self.len() {
+            return Err(NdarrowError::ShapeMismatch {
+                message: format!(
+                    "row index {index} out of bounds for batch of length {}",
+                    self.len()
+                ),
+            });
+        }
+
+        let row = decode_variable_shape_tensor_row(
+            index,
+            self.data.value_offsets(),
+            self.shape_values.values().as_ref(),
+            self.dimensions,
+            self.uniform_shape.as_deref(),
+        )?;
+        Ok(VariableShapeTensorRowView {
+            row:    row.row,
+            values: &self.data_values.values().as_ref()[row.start..row.end],
+            shape:  row.shape,
+        })
+    }
+
+    /// Returns the per-row iterator convenience view for this batch.
+    #[must_use]
+    pub fn iter(&self) -> VariableShapeTensorIter<'a, T> {
+        VariableShapeTensorIter { batch: (*self).clone(), index: 0 }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a VariableShapeTensorBatchView<'a, T>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    type IntoIter = VariableShapeTensorIter<'a, T>;
+    type Item = Result<(usize, ArrayViewD<'a, T::Native>), NdarrowError>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// Builds a column-level view over `arrow.variable_shape_tensor` storage.
+///
+/// # Does not allocate
+///
+/// This borrows the Arrow child arrays, offsets, shape buffer, and primitive
+/// values directly.
+///
+/// # Errors
+///
+/// Returns an error if extension/type invariants are violated or if child
+/// storage arrays carry nulls.
+pub fn variable_shape_tensor_batch_view<'a, T>(
+    field: &Field,
+    array: &'a StructArray,
+) -> Result<VariableShapeTensorBatchView<'a, T>, NdarrowError>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    let storage = variable_shape_tensor_storage(field, array)?;
+    let data_values =
+        storage.data.values().as_any().downcast_ref::<PrimitiveArray<T>>().ok_or_else(|| {
+            NdarrowError::InnerTypeMismatch {
+                message: format!(
+                    "expected variable tensor data values as {:?}, found {}",
+                    T::DATA_TYPE,
+                    storage.data.values().data_type()
+                ),
+            }
+        })?;
+    if data_values.null_count() > 0 {
+        return Err(NdarrowError::NullsPresent { null_count: data_values.null_count() });
+    }
+
+    Ok(VariableShapeTensorBatchView {
+        nulls: array.nulls(),
+        data: storage.data,
+        data_values,
+        shape_values: storage.shape_values,
+        dimensions: storage.dimensions,
+        uniform_shape: storage.uniform_shape,
     })
 }
 
@@ -499,9 +733,8 @@ where
     T: ArrowPrimitiveType,
     T::Native: NdarrowElement,
 {
-    rows:        VariableShapeTensorRowCursor<'a>,
-    data_values: &'a PrimitiveArray<T>,
-    marker:      PhantomData<T>,
+    batch: VariableShapeTensorBatchView<'a, T>,
+    index: usize,
 }
 
 impl<'a, T> Iterator for VariableShapeTensorIter<'a, T>
@@ -512,16 +745,50 @@ where
     type Item = Result<(usize, ArrayViewD<'a, T::Native>), NdarrowError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let row = match self.rows.next_row() {
-            Some(Ok(row)) => row,
-            Some(Err(err)) => return Some(Err(err)),
-            None => return None,
-        };
+        if self.index >= self.batch.len() {
+            return None;
+        }
 
-        let slice = &self.data_values.values().as_ref()[row.start..row.end];
-        let view = ArrayViewD::from_shape(IxDyn(&row.shape), slice).map_err(NdarrowError::from);
-        Some(view.map(|view| (row.row, view)))
+        let row = self.index;
+        self.index += 1;
+
+        Some(
+            self.batch
+                .row(row)
+                .and_then(|row_view| row_view.as_array_viewd().map(|view| (row, view))),
+        )
     }
+}
+
+/// Creates an iterator over per-row zero-copy ndarray views for
+/// `arrow.variable_shape_tensor` together with the outer validity buffer.
+///
+/// # Does not allocate
+///
+/// This borrows Arrow values buffers directly. Iterator row shape decoding uses
+/// small per-row shape vectors.
+///
+/// # Errors
+///
+/// Returns an error if extension/type invariants are violated or if child
+/// storage arrays carry nulls.
+///
+/// # Semantics
+///
+/// When the returned validity buffer marks a row as null, the iterator still
+/// yields a physical row view for that position. Callers must consult the
+/// validity buffer before interpreting a row.
+pub fn variable_shape_tensor_iter_masked<'a, T>(
+    field: &Field,
+    array: &'a StructArray,
+) -> Result<(VariableShapeTensorIter<'a, T>, Option<&'a NullBuffer>), NdarrowError>
+where
+    T: ArrowPrimitiveType,
+    T::Native: NdarrowElement,
+{
+    let batch = variable_shape_tensor_batch_view(field, array)?;
+    let nulls = batch.nulls();
+    Ok((batch.iter(), nulls))
 }
 
 /// Creates an iterator over per-row zero-copy ndarray views for
@@ -549,18 +816,12 @@ where
     T: ArrowPrimitiveType,
     T::Native: NdarrowElement,
 {
-    let storage = variable_shape_tensor_storage(field, array)?;
-    let data_values = storage
-        .data
-        .values()
-        .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .expect("extension storage guarantees variable data inner type");
-    if data_values.null_count() > 0 {
-        return Err(NdarrowError::NullsPresent { null_count: data_values.null_count() });
+    if array.null_count() > 0 {
+        return Err(NdarrowError::NullsPresent { null_count: array.null_count() });
     }
 
-    Ok(VariableShapeTensorIter { rows: storage.row_cursor(), data_values, marker: PhantomData })
+    let (iter, _nulls) = variable_shape_tensor_iter_masked(field, array)?;
+    Ok(iter)
 }
 
 pub(crate) fn push_tensor_shape(
@@ -924,6 +1185,66 @@ mod tests {
 
         let result = variable_shape_tensor_iter::<Float32Type>(&field, &with_nulls);
         assert!(matches!(result, Err(NdarrowError::NullsPresent { .. })));
+    }
+
+    #[test]
+    fn variable_shape_tensor_batch_view_exposes_columnar_buffers() {
+        let a = ArrayD::from_shape_vec(IxDyn(&[1, 2]), vec![1.0_f32, 2.0]).unwrap();
+        let b = ArrayD::from_shape_vec(IxDyn(&[2, 2]), vec![3.0_f32, 4.0, 5.0, 6.0]).unwrap();
+        let (field, array) =
+            arrays_to_variable_shape_tensor("ragged", vec![a, b], Some(vec![None, Some(2)]))
+                .unwrap();
+
+        let with_nulls = StructArray::new(
+            array.fields().clone(),
+            array.columns().to_vec(),
+            Some(NullBuffer::from(vec![true, false])),
+        );
+
+        let batch = variable_shape_tensor_batch_view::<Float32Type>(&field, &with_nulls).unwrap();
+        let nulls = batch.nulls().expect("outer null buffer");
+        let row = batch.row(1).unwrap();
+        let view = row.as_array_viewd().unwrap();
+
+        assert_eq!(batch.len(), 2);
+        assert!(!batch.is_empty());
+        assert_eq!(batch.dimensions(), 2);
+        assert_eq!(batch.uniform_shape(), Some(&[None, Some(2)][..]));
+        assert_eq!(batch.data_offsets(), &[0, 2, 6]);
+        assert_eq!(batch.shape_values(), &[1, 2, 2, 2]);
+        assert_eq!(batch.values(), &[1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert!(nulls.is_valid(0));
+        assert!(nulls.is_null(1));
+        assert_eq!(row.row(), 1);
+        assert_eq!(row.shape(), &[2, 2]);
+        assert_eq!(row.values(), &[3.0_f32, 4.0, 5.0, 6.0]);
+        assert_abs_diff_eq!(view[[1, 1]], 6.0_f32);
+    }
+
+    #[test]
+    fn variable_shape_tensor_iter_masked_preserves_outer_nulls() {
+        let a = ArrayD::from_shape_vec(IxDyn(&[1, 2]), vec![1.0_f32, 2.0]).unwrap();
+        let b = ArrayD::from_shape_vec(IxDyn(&[1, 2]), vec![3.0_f32, 4.0]).unwrap();
+        let (field, array) = arrays_to_variable_shape_tensor("ragged", vec![a, b], None).unwrap();
+
+        let with_nulls = StructArray::new(
+            array.fields().clone(),
+            array.columns().to_vec(),
+            Some(NullBuffer::from(vec![true, false])),
+        );
+
+        let (iter, nulls) =
+            variable_shape_tensor_iter_masked::<Float32Type>(&field, &with_nulls).unwrap();
+        let rows = iter.collect::<Result<Vec<_>, _>>().unwrap();
+        let nulls = nulls.expect("outer null buffer");
+
+        assert_eq!(rows.len(), 2);
+        assert!(nulls.is_valid(0));
+        assert!(nulls.is_null(1));
+        assert_eq!(rows[0].0, 0);
+        assert_eq!(rows[0].1.shape(), &[1, 2]);
+        assert_abs_diff_eq!(rows[0].1[[0, 1]], 2.0_f32);
+        assert_eq!(rows[1].0, 1);
     }
 
     #[test]

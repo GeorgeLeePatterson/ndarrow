@@ -81,6 +81,7 @@ pub use error::NdarrowError;
 pub use extensions::{
     RegisteredExtension, deserialize_registered_extension, registered_extension_names,
 };
+pub use helpers::{NullFill, fill_nulls, fill_nulls_with_value};
 pub use inbound::AsNdarray;
 // Re-export free functions for FixedSizeList conversions.
 pub use inbound::{
@@ -89,11 +90,14 @@ pub use inbound::{
 };
 pub use outbound::IntoArrow;
 pub use sparse::{
-    CsrMatrixBatchExtension, CsrMatrixBatchIter, CsrMatrixExtension, CsrMatrixMetadata, CsrView,
-    csr_batch_to_extension_array, csr_matrix_batch_iter, csr_to_extension_array,
+    CsrMatrixBatchExtension, CsrMatrixBatchIter, CsrMatrixBatchView, CsrMatrixExtension,
+    CsrMatrixMetadata, CsrView, csr_batch_to_extension_array, csr_matrix_batch_iter,
+    csr_matrix_batch_iter_masked, csr_matrix_batch_view, csr_to_extension_array,
     csr_view_from_columns, csr_view_from_extension,
 };
 pub use tensor::{
-    VariableShapeTensorIter, arrayd_to_fixed_shape_tensor, arrays_to_variable_shape_tensor,
-    fixed_shape_tensor_as_array_viewd, variable_shape_tensor_iter,
+    VariableShapeTensorBatchView, VariableShapeTensorIter, VariableShapeTensorRowView,
+    arrayd_to_fixed_shape_tensor, arrays_to_variable_shape_tensor,
+    fixed_shape_tensor_as_array_viewd, variable_shape_tensor_batch_view,
+    variable_shape_tensor_iter, variable_shape_tensor_iter_masked,
 };
